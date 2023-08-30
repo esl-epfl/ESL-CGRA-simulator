@@ -1,7 +1,8 @@
 import numpy as np
 from ctypes import c_int32
 import csv
-import functools
+
+from kernels import *
 
 # CGRA from left to right, top to bottom
 N_ROWS      = 4
@@ -9,7 +10,6 @@ N_COLS      = 4
 INSTR_SIZE  = N_ROWS+1
 MAX_COL     = N_COLS - 1
 MAX_ROW     = N_ROWS - 1
-WORD_SIZE   = 4
 
 PRINT_OUTS  = 1
 
@@ -304,18 +304,18 @@ def run( kernel, version="" ):
     oup = []
     mem = []
 
-    with open( kernel + "/instructions"+version+".csv", 'r') as f:
+    with open( kernel + "/"+FILENAME_INSTR+version+EXT, 'r') as f:
         for row in csv.reader(f): ker.append(row)
-    with open( kernel + "/inputs.csv", 'r') as f:
+    with open( kernel + "/"+FILENAME_INP+EXT, 'r') as f:
         for row in csv.reader(f): inp.append(row)
-    with open( kernel + "/memory.csv", 'r') as f:
+    with open( kernel + "/"+FILENAME_MEM+EXT, 'r') as f:
         for row in csv.reader(f): mem.append(row)
 
     oup, mem = CGRA( ker, mem, inp, oup ).run()
 
-    with open( kernel +"/memory_out.csv", 'w+') as f:
+    with open( kernel + "/"+FILENAME_MEM_O+EXT, 'w+') as f:
         for row in mem: csv.writer(f).writerow(row)
-    with open( kernel +"/outputs.csv", 'w+') as f:
+    with open( kernel + "/"+FILENAME_OUP+EXT, 'w+') as f:
         for row in oup: csv.writer(f).writerow(row)
 
     print("\n\nEND")
