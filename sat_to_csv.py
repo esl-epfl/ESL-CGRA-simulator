@@ -18,12 +18,6 @@ def convert(infile, outfile, version=""):
 
     conf_set = []
 
-    n_nodes = int(lines[0][-2])
-    n_cols = int(math.sqrt(n_nodes))
-    n_rows = n_cols
-    print(n_nodes)
-    print(n_cols)
-
     for line in lines:
 
         # Start reading instructions
@@ -45,6 +39,10 @@ def convert(infile, outfile, version=""):
         if reading_conf:
             configuration.append(line)
 
+    # counts the nodes and infer rows and columns (always assumes a squared mesh)
+    n_nodes = len(conf_set[0][1:])
+    n_cols = int(math.sqrt(n_nodes))
+    n_rows = n_cols
 
     # Write the output file
     with open(outfile, "w") as f:

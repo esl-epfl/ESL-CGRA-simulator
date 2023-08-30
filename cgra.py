@@ -57,7 +57,16 @@ class CGRA:
                 if b != 0: self.instr2exec = b - 1 #To avoid more logic afterwards
                 if e != 0: self.exit = True
             outs = [ self.cells[r][i].out for i in range(N_COLS) ]
-            if PRINT_OUTS: print(outs)
+            if PRINT_OUTS: 
+                out_string = "["
+                for i in range(len(outs)):
+                    out_string += "{{{}:4}}".format(i)
+                    if i == (len(outs) - 1):
+                        out_string += "]"
+                    else:
+                        out_string += ", "
+                print(out_string.format(*[o for o in outs]))
+
         self.instr2exec += 1
         self.cycles += 1
         return self.exit
