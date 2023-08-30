@@ -57,7 +57,7 @@ class CGRA:
                 if b != 0: self.instr2exec = b - 1 #To avoid more logic afterwards
                 if e != 0: self.exit = True
             outs = [ self.cells[r][i].out for i in range(N_COLS) ]
-            if PRINT_OUTS: 
+            if PRINT_OUTS:
                 out_string = "["
                 for i in range(len(outs)):
                     out_string += "{{{}:4}}".format(i)
@@ -141,7 +141,7 @@ class PE:
             return int( self.regs[val])
         return int(self.parent.get_neighbour_out( self.row, self.col, val ))
 
-    def fetch_flag( self, flag, dir ):
+    def fetch_flag( self, dir, flag ):
         if dir == 'ROUT':
             return int( self.old_out)
         return int(self.parent.get_neighbour_flag( self.row, self.col, dir, flag ))
@@ -177,7 +177,8 @@ class PE:
             val1    = self.fetch_val( instr[2] )
             val2    = self.fetch_val( instr[3] )
             src     = instr[4]
-            ret     = self.ops_cond[op]( val1, val2, src )
+            method  = self.ops_cond[op]
+            ret     = method(self, val1, val2, src)
             if des in self.regs: self.regs[des] = ret
             else: self.out = ret
 
@@ -261,11 +262,11 @@ class PE:
         return c_int32( ~( val1 ^ val2 ) & MAX_32b ).value
 
     def bsfa( self, val1, val2, src):
-        flag = self.fetch_flag( self.row, self.col, src, 'sign')
+        flag = self.fetch_flag( src, 'sign')
         return val1 if flag == 1 else val2
 
     def bzfa( self,  val1, val2, src):
-        flag = self.fetch_flag( self.row, self.col, src, 'zero')
+        flag = self.fetch_flag( src, 'zero')
         return val1 if flag == 1 else val2
 
     def beq( self,  val1, val2, branch ):
