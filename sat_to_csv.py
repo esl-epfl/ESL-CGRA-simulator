@@ -2,9 +2,9 @@ import math
 import csv
 
 ## Convert the output of SAT-MapIt into a csv file compatible with the simulator
-def convert(infile, outfile, version):
+def convert(infile, outfile, version=""):
 
-    outfile = outfile.split(".")[0] + "_{}." + outfile.split(".")[-1]
+    outfile = outfile.split(".")[0] + "{}." + outfile.split(".")[-1]
     outfile = outfile.format(version)
 
     # Read the input file (output of SAT-MapIt)
@@ -21,6 +21,8 @@ def convert(infile, outfile, version):
     n_nodes = int(lines[0][-2])
     n_cols = int(math.sqrt(n_nodes))
     n_rows = n_cols
+    print(n_nodes)
+    print(n_cols)
 
     for line in lines:
 
@@ -53,9 +55,9 @@ def convert(infile, outfile, version):
             instrs = conf[1:]
 
             writer.writerow(time[-2])
-            
+
             rows = [[instrs[(n_cols * r) + c][:-1] for c in range(n_cols)] for r in range(n_rows)]
-            
+
             for r in rows:
                 writer.writerow(r)
 

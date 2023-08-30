@@ -1,0 +1,939 @@
+#nodes: 16
+REC 2
+RES 1
+
+
+
+
+NOTE:
+Jump location of br at time 4 and 6 do not have a valid jump location, I've just put 18 (last time step).
+This is a problem that can be encountered in every modulo scheduled loop with unknown trip count.
+For now we do not handle this cases.
+
+
+
+
+
+
+ASAP Schedule
+0 1 2 
+9 12 13 58 
+3 10 14 
+4 
+99 
+6 
+7 
+8 
+11 
+
+
+ALAP Schedule
+0 
+58 
+3 
+4 
+99 
+1 6 
+7 9 
+2 8 10 12 
+11 13 14 
+
+
+Mobility Schedule
+0 1 2 
+1 2 9 12 13 58 
+1 2 3 9 10 12 13 14 
+1 2 4 9 10 12 13 14 
+1 2 9 10 12 13 14 99 
+1 2 6 9 10 12 13 14 
+2 7 9 10 12 13 14 
+2 8 10 12 13 14 
+11 13 14 
+
+II: 2
+nit 9/2= 4.5= 5
+KMS
+[(0, 0), (0, 1), (0, 2), (1, 1), (1, 2), (1, 3), (1, 9), (1, 10), (1, 12), (1, 13), (1, 14), (2, 1), (2, 2), (2, 9), (2, 10), (2, 12), (2, 13), (2, 14), (2, 99), (3, 2), (3, 7), (3, 9), (3, 10), (3, 12), (3, 13), (3, 14), (4, 11), (4, 13), (4, 14)]
+[(0, 1), (0, 2), (0, 9), (0, 12), (0, 13), (0, 58), (1, 1), (1, 2), (1, 4), (1, 9), (1, 10), (1, 12), (1, 13), (1, 14), (2, 1), (2, 2), (2, 6), (2, 9), (2, 10), (2, 12), (2, 13), (2, 14), (3, 2), (3, 8), (3, 10), (3, 12), (3, 13), (3, 14)]
+Adding C1...
+Time: 4.001209020614624
+Adding C2...
+Time: 1.4276859760284424
+Adding C3...
+[0, 12]
+[0, 58]
+[1, 13]
+[1, 9]
+[2, 11]
+[3, 4]
+[4, 99]
+[6, 7]
+[7, 8]
+[8, 11]
+[9, 10]
+[10, 11]
+[12, 14]
+[58, 3]
+[99, 6]
+Adding back...
+[11, 2]
+[12, 0]
+[13, 1]
+Time: 0.3903629779815674
+SAT
+Node 10 on PE 1 at time 0 of it 3
+Node 99 on PE 10 at time 0 of it 2
+Node 0 on PE 15 at time 0 of it 0
+Node 7 on PE 14 at time 0 of it 3
+Node 14 on PE 15 at time 1 of it 1
+Node 12 on PE 11 at time 1 of it 0
+Node 13 on PE 5 at time 1 of it 1
+Node 11 on PE 13 at time 0 of it 4
+Node 9 on PE 0 at time 0 of it 2
+Node 3 on PE 7 at time 0 of it 1
+Node 4 on PE 6 at time 1 of it 1
+Node 8 on PE 14 at time 1 of it 3
+Node 6 on PE 10 at time 1 of it 2
+Node 58 on PE 3 at time 1 of it 0
+Node 1 on PE 4 at time 0 of it 1
+Node 2 on PE 13 at time 1 of it 3
+Kernel
+[ 10 99 0 7 11 9 3 1 ]
+[ 14 12 13 4 8 6 58 2 ]
+Schedule
+[0]
+[12, 58]
+[3, 1]
+[14, 13, 4]
+[99, 9]
+[6]
+[10, 7]
+[8, 2]
+[11]
+Time: 0.22771811485290527
+PKE
+t: 0     0 
+t: 1     12 58 
+t: 2     3 1 0 
+t: 3     14 13 4 12 58 
+t: 4     99 9 3 1 0 
+t: 5     6 14 13 4 12 58 
+t: 6     10 7 99 9 3 1 0 
+t: 7     8 2 6 14 13 4 12 58 
+t: 8     10 99 0 7 11 9 3 1 
+t: 9     14 12 13 4 8 6 58 2 
+t: 10     3 1 99 9 10 7 11 
+t: 11     14 13 4 6 8 2 
+t: 12     99 9 10 7 11 
+t: 13     6 8 2 
+t: 14     10 7 11 
+t: 15     8 2 
+t: 16     11 
+Interference graphs PE16: 12
+Colors needed: 0
+Colors needed: 0
+Colors needed: 0
+Colors needed: 0
+Colors needed: 0
+Colors needed: 0
+Colors needed: 0
+Colors needed: 0
+Colors needed: 0
+Colors needed: 0
+Colors needed: 0
+Colors needed: 0
+#Nodes: 0
+#Nodes: 0
+#Nodes: 0
+#Nodes: 0
+#Nodes: 0
+#Nodes: 0
+#Nodes: 0
+#Nodes: 0
+#Nodes: 0
+#Nodes: 0
+#Nodes: 0
+#Nodes: 0
+init_len:  1
+prolog_len:  8
+kernel_len:  2
+epilog_len:  7
+fini_len:  1
+Init: 0 - 0
+Prolog: 1 - 8
+Kernel: 9 - 10
+Epilog: 11 - 17
+Fini: 18 - 18
+T = 0
+NOP
+LWD R0
+NOP
+NOP
+NOP
+SADD ROUT, ZERO, 0
+NOP
+LWD R0
+NOP
+NOP
+LWD R0
+SADD ROUT, ZERO, 0
+NOP
+LWD ROUT
+LWD R0
+LWD R0
+T = 1
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+SADD ROUT, RCT, ZERO
+T = 2
+NOP
+NOP
+NOP
+SMUL ROUT, RCT, 4
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+SADD ROUT, RCB, 1
+NOP
+NOP
+NOP
+NOP
+T = 3
+NOP
+NOP
+NOP
+NOP
+SADD ROUT, RCR, ZERO
+NOP
+NOP
+SADD ROUT, R0, RCT
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+SADD ROUT, RCT, ZERO
+T = 4
+NOP
+NOP
+NOP
+SMUL ROUT, RCT, 4
+NOP
+SADD ROUT, RCL, 1
+LWI ROUT, RCR
+NOP
+NOP
+NOP
+NOP
+SADD ROUT, RCB, 1
+NOP
+NOP
+NOP
+BEQ RCT, R0, 18
+T = 5
+LXOR ROUT, RCB, -1
+NOP
+NOP
+NOP
+SADD ROUT, RCR, ZERO
+NOP
+NOP
+SADD ROUT, R0, RCT
+NOP
+NOP
+SMUL ROUT, RCT, 4
+NOP
+NOP
+NOP
+NOP
+SADD ROUT, RCT, ZERO
+T = 6
+NOP
+NOP
+NOP
+SMUL ROUT, RCT, 4
+NOP
+SADD ROUT, RCL, 1
+LWI ROUT, RCR
+NOP
+NOP
+NOP
+SADD ROUT, ROUT, R0
+SADD ROUT, RCB, 1
+NOP
+NOP
+NOP
+BEQ RCT, R0, 18
+T = 7
+LXOR ROUT, RCB, -1
+SADD ROUT, RCL, R0
+NOP
+NOP
+SADD ROUT, RCR, ZERO
+NOP
+NOP
+SADD ROUT, R0, RCT
+NOP
+NOP
+SMUL ROUT, RCT, 4
+NOP
+NOP
+NOP
+LWI ROUT, RCT
+SADD ROUT, RCT, ZERO
+T = 8
+NOP
+NOP
+NOP
+SMUL ROUT, RCT, 4
+NOP
+SADD ROUT, RCL, 1
+LWI ROUT, RCR
+NOP
+NOP
+NOP
+SADD ROUT, ROUT, R0
+SADD ROUT, RCB, 1
+NOP
+SADD ROUT, ROUT, ZERO
+SSUB ROUT, ROUT, R0
+BEQ RCT, R0, 11
+T = 9
+LXOR ROUT, RCB, -1
+SADD ROUT, RCL, R0
+NOP
+NOP
+SADD ROUT, RCR, ZERO
+NOP
+NOP
+SADD ROUT, R0, RCT
+NOP
+NOP
+SMUL ROUT, RCT, 4
+NOP
+NOP
+BZFA ROUT, RCB, ROUT, RCR
+LWI ROUT, RCT
+SADD ROUT, RCT, ZERO
+T = 10
+NOP
+NOP
+NOP
+SMUL ROUT, RCT, 4
+NOP
+SADD ROUT, RCL, 1
+LWI ROUT, RCR
+NOP
+NOP
+NOP
+SADD ROUT, ROUT, R0
+SADD ROUT, RCB, 1
+NOP
+SADD ROUT, ROUT, ZERO
+SSUB ROUT, ROUT, R0
+BNE RCT, R0, 9
+T = 11
+LXOR ROUT, RCB, -1
+SADD ROUT, RCL, R0
+NOP
+NOP
+SADD ROUT, RCR, ZERO
+NOP
+NOP
+SADD ROUT, R0, RCT
+NOP
+NOP
+SMUL ROUT, RCT, 4
+NOP
+NOP
+BZFA ROUT, RCB, ROUT, RCR
+LWI ROUT, RCT
+NOP
+T = 12
+NOP
+NOP
+NOP
+NOP
+NOP
+SADD ROUT, RCL, 1
+LWI ROUT, RCR
+NOP
+NOP
+NOP
+SADD ROUT, ROUT, R0
+NOP
+NOP
+SADD ROUT, ROUT, ZERO
+SSUB ROUT, ROUT, R0
+BEQ RCT, R0, 13
+T = 13
+LXOR ROUT, RCB, -1
+SADD ROUT, RCL, R0
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+SMUL ROUT, RCT, 4
+NOP
+NOP
+BZFA ROUT, RCB, ROUT, RCR
+LWI ROUT, RCT
+NOP
+T = 14
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+SADD ROUT, ROUT, R0
+NOP
+NOP
+SADD ROUT, ROUT, ZERO
+SSUB ROUT, ROUT, R0
+NOP
+T = 15
+NOP
+SADD ROUT, RCL, R0
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+BZFA ROUT, RCB, ROUT, RCR
+LWI ROUT, RCT
+NOP
+T = 16
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+SADD ROUT, ROUT, ZERO
+SSUB ROUT, ROUT, R0
+NOP
+T = 17
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+BZFA ROUT, RCB, ROUT, RCR
+NOP
+NOP
+T = 18
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+SWD ROUT
+NOP
+NOP
+T = 0
+ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+|  |NOP|  ||  |LWD|  ||  |NOP|  ||  |NOP|  |
+|- - - - - - - - - - - - - - - - - - - - - 
+|  |NOP|  ||  |SADD|  ||  |NOP|  ||  |LWD|  |
+|- - - - - - - - - - - - - - - - - - - - - 
+|  |NOP|  ||  |NOP|  ||  |LWD|  ||  |SADD|  |
+|- - - - - - - - - - - - - - - - - - - - - 
+|  |NOP|  ||  |LWD|  ||  |LWD|  ||  |LWD|  |
+ - - - - - - - - - - - - - - - - - - - -- -
+
+T = 1
+ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+|  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  |
+|- - - - - - - - - - - - - - - - - - - - - 
+|  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  |
+|- - - - - - - - - - - - - - - - - - - - - 
+|  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  |
+|- - - - - - - - - - - - - - - - - - - - - 
+|  |NOP|  ||  |NOP|  ||  |NOP|  ||  |MV|  |
+ - - - - - - - - - - - - - - - - - - - -- -
+
+T = 2
+ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+|  |NOP|  ||  |NOP|  ||  |NOP|  ||  |SMUL|  |
+|- - - - - - - - - - - - - - - - - - - - - 
+|  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  |
+|- - - - - - - - - - - - - - - - - - - - - 
+|  |NOP|  ||  |NOP|  ||  |NOP|  ||  |SADD|  |
+|- - - - - - - - - - - - - - - - - - - - - 
+|  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  |
+ - - - - - - - - - - - - - - - - - - - -- -
+
+T = 3
+ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+|  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  |
+|- - - - - - - - - - - - - - - - - - - - - 
+|  |MV|  ||  |NOP|  ||  |NOP|  ||  |SADD|  |
+|- - - - - - - - - - - - - - - - - - - - - 
+|  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  |
+|- - - - - - - - - - - - - - - - - - - - - 
+|  |NOP|  ||  |NOP|  ||  |NOP|  ||  |MV|  |
+ - - - - - - - - - - - - - - - - - - - -- -
+
+T = 4
+ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+|  |NOP|  ||  |NOP|  ||  |NOP|  ||  |SMUL|  |
+|- - - - - - - - - - - - - - - - - - - - - 
+|  |NOP|  ||  |SADD|  ||  |LWI|  ||  |NOP|  |
+|- - - - - - - - - - - - - - - - - - - - - 
+|  |NOP|  ||  |NOP|  ||  |NOP|  ||  |SADD|  |
+|- - - - - - - - - - - - - - - - - - - - - 
+|  |NOP|  ||  |NOP|  ||  |NOP|  ||  |BNE|  |
+ - - - - - - - - - - - - - - - - - - - -- -
+
+T = 5
+ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+|  |LXOR|  ||  |NOP|  ||  |NOP|  ||  |NOP|  |
+|- - - - - - - - - - - - - - - - - - - - - 
+|  |MV|  ||  |NOP|  ||  |NOP|  ||  |SADD|  |
+|- - - - - - - - - - - - - - - - - - - - - 
+|  |NOP|  ||  |NOP|  ||  |SMUL|  ||  |NOP|  |
+|- - - - - - - - - - - - - - - - - - - - - 
+|  |NOP|  ||  |NOP|  ||  |NOP|  ||  |MV|  |
+ - - - - - - - - - - - - - - - - - - - -- -
+
+T = 6
+ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+|  |NOP|  ||  |NOP|  ||  |NOP|  ||  |SMUL|  |
+|- - - - - - - - - - - - - - - - - - - - - 
+|  |NOP|  ||  |SADD|  ||  |LWI|  ||  |NOP|  |
+|- - - - - - - - - - - - - - - - - - - - - 
+|  |NOP|  ||  |NOP|  ||  |SADD|  ||  |SADD|  |
+|- - - - - - - - - - - - - - - - - - - - - 
+|  |NOP|  ||  |NOP|  ||  |NOP|  ||  |BNE|  |
+ - - - - - - - - - - - - - - - - - - - -- -
+
+T = 7
+ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+|  |LXOR|  ||  |SADD|  ||  |NOP|  ||  |NOP|  |
+|- - - - - - - - - - - - - - - - - - - - - 
+|  |MV|  ||  |NOP|  ||  |NOP|  ||  |SADD|  |
+|- - - - - - - - - - - - - - - - - - - - - 
+|  |NOP|  ||  |NOP|  ||  |SMUL|  ||  |NOP|  |
+|- - - - - - - - - - - - - - - - - - - - - 
+|  |NOP|  ||  |NOP|  ||  |LWI|  ||  |MV|  |
+ - - - - - - - - - - - - - - - - - - - -- -
+
+T = 8
+ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+|  |NOP|  ||  |NOP|  ||  |NOP|  ||  |SMUL|  |
+|- - - - - - - - - - - - - - - - - - - - - 
+|  |NOP|  ||  |SADD|  ||  |LWI|  ||  |NOP|  |
+|- - - - - - - - - - - - - - - - - - - - - 
+|  |NOP|  ||  |NOP|  ||  |SADD|  ||  |SADD|  |
+|- - - - - - - - - - - - - - - - - - - - - 
+|  |NOP|  ||  |MV|  ||  |SSUB|  ||  |BNE|  |
+ - - - - - - - - - - - - - - - - - - - -- -
+
+T = 9
+ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+|  |LXOR|  ||  |SADD|  ||  |NOP|  ||  |NOP|  |
+|- - - - - - - - - - - - - - - - - - - - - 
+|  |MV|  ||  |NOP|  ||  |NOP|  ||  |SADD|  |
+|- - - - - - - - - - - - - - - - - - - - - 
+|  |NOP|  ||  |NOP|  ||  |SMUL|  ||  |NOP|  |
+|- - - - - - - - - - - - - - - - - - - - - 
+|  |NOP|  ||  |BZFA|  ||  |LWI|  ||  |MV|  |
+ - - - - - - - - - - - - - - - - - - - -- -
+
+T = 10
+ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+|  |NOP|  ||  |NOP|  ||  |NOP|  ||  |SMUL|  |
+|- - - - - - - - - - - - - - - - - - - - - 
+|  |NOP|  ||  |SADD|  ||  |LWI|  ||  |NOP|  |
+|- - - - - - - - - - - - - - - - - - - - - 
+|  |NOP|  ||  |NOP|  ||  |SADD|  ||  |SADD|  |
+|- - - - - - - - - - - - - - - - - - - - - 
+|  |NOP|  ||  |MV|  ||  |SSUB|  ||  |BNE|  |
+ - - - - - - - - - - - - - - - - - - - -- -
+
+T = 11
+ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+|  |LXOR|  ||  |SADD|  ||  |NOP|  ||  |NOP|  |
+|- - - - - - - - - - - - - - - - - - - - - 
+|  |MV|  ||  |NOP|  ||  |NOP|  ||  |SADD|  |
+|- - - - - - - - - - - - - - - - - - - - - 
+|  |NOP|  ||  |NOP|  ||  |SMUL|  ||  |NOP|  |
+|- - - - - - - - - - - - - - - - - - - - - 
+|  |NOP|  ||  |BZFA|  ||  |LWI|  ||  |NOP|  |
+ - - - - - - - - - - - - - - - - - - - -- -
+
+T = 12
+ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+|  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  |
+|- - - - - - - - - - - - - - - - - - - - - 
+|  |NOP|  ||  |SADD|  ||  |LWI|  ||  |NOP|  |
+|- - - - - - - - - - - - - - - - - - - - - 
+|  |NOP|  ||  |NOP|  ||  |SADD|  ||  |NOP|  |
+|- - - - - - - - - - - - - - - - - - - - - 
+|  |NOP|  ||  |MV|  ||  |SSUB|  ||  |BNE|  |
+ - - - - - - - - - - - - - - - - - - - -- -
+
+T = 13
+ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+|  |LXOR|  ||  |SADD|  ||  |NOP|  ||  |NOP|  |
+|- - - - - - - - - - - - - - - - - - - - - 
+|  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  |
+|- - - - - - - - - - - - - - - - - - - - - 
+|  |NOP|  ||  |NOP|  ||  |SMUL|  ||  |NOP|  |
+|- - - - - - - - - - - - - - - - - - - - - 
+|  |NOP|  ||  |BZFA|  ||  |LWI|  ||  |NOP|  |
+ - - - - - - - - - - - - - - - - - - - -- -
+
+T = 14
+ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+|  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  |
+|- - - - - - - - - - - - - - - - - - - - - 
+|  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  |
+|- - - - - - - - - - - - - - - - - - - - - 
+|  |NOP|  ||  |NOP|  ||  |SADD|  ||  |NOP|  |
+|- - - - - - - - - - - - - - - - - - - - - 
+|  |NOP|  ||  |MV|  ||  |SSUB|  ||  |NOP|  |
+ - - - - - - - - - - - - - - - - - - - -- -
+
+T = 15
+ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+|  |NOP|  ||  |SADD|  ||  |NOP|  ||  |NOP|  |
+|- - - - - - - - - - - - - - - - - - - - - 
+|  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  |
+|- - - - - - - - - - - - - - - - - - - - - 
+|  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  |
+|- - - - - - - - - - - - - - - - - - - - - 
+|  |NOP|  ||  |BZFA|  ||  |LWI|  ||  |NOP|  |
+ - - - - - - - - - - - - - - - - - - - -- -
+
+T = 16
+ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+|  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  |
+|- - - - - - - - - - - - - - - - - - - - - 
+|  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  |
+|- - - - - - - - - - - - - - - - - - - - - 
+|  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  |
+|- - - - - - - - - - - - - - - - - - - - - 
+|  |NOP|  ||  |MV|  ||  |SSUB|  ||  |NOP|  |
+ - - - - - - - - - - - - - - - - - - - -- -
+
+T = 17
+ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+|  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  |
+|- - - - - - - - - - - - - - - - - - - - - 
+|  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  |
+|- - - - - - - - - - - - - - - - - - - - - 
+|  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  |
+|- - - - - - - - - - - - - - - - - - - - - 
+|  |NOP|  ||  |BZFA|  ||  |NOP|  ||  |NOP|  |
+ - - - - - - - - - - - - - - - - - - - -- -
+
+T = 18
+ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+|  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  |
+|- - - - - - - - - - - - - - - - - - - - - 
+|  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  |
+|- - - - - - - - - - - - - - - - - - - - - 
+|  |NOP|  ||  |NOP|  ||  |NOP|  ||  |NOP|  |
+|- - - - - - - - - - - - - - - - - - - - - 
+|  |NOP|  ||  |SWD|  ||  |NOP|  ||  |NOP|  |
+ - - - - - - - - - - - - - - - - - - - -- -
+
+Output of the mapping with node id
+T = 0
+ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+|  | -1 |  ||  | 45 |  ||  | -1 |  ||  | -1 |  |
+|- - - - - - - - - - - - - - - - - - - - - 
+|  | -1 |  ||  | 27 |  ||  | -1 |  ||  | 42 |  |
+|- - - - - - - - - - - - - - - - - - - - - 
+|  | -1 |  ||  | -1 |  ||  | 47 |  ||  | 26 |  |
+|- - - - - - - - - - - - - - - - - - - - - 
+|  | -1 |  ||  | 41 |  ||  | 44 |  ||  | 46 |  |
+ - - - - - - - - - - - - - - - - - - - -- -
+
+T = 1
+ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+|  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  |
+|- - - - - - - - - - - - - - - - - - - - - 
+|  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  |
+|- - - - - - - - - - - - - - - - - - - - - 
+|  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  |
+|- - - - - - - - - - - - - - - - - - - - - 
+|  | -1 |  ||  | -1 |  ||  | -1 |  ||  | 0 |  |
+ - - - - - - - - - - - - - - - - - - - -- -
+
+T = 2
+ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+|  | -1 |  ||  | -1 |  ||  | -1 |  ||  | 58 |  |
+|- - - - - - - - - - - - - - - - - - - - - 
+|  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  |
+|- - - - - - - - - - - - - - - - - - - - - 
+|  | -1 |  ||  | -1 |  ||  | -1 |  ||  | 12 |  |
+|- - - - - - - - - - - - - - - - - - - - - 
+|  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  |
+ - - - - - - - - - - - - - - - - - - - -- -
+
+T = 3
+ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+|  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  |
+|- - - - - - - - - - - - - - - - - - - - - 
+|  | 1 |  ||  | -1 |  ||  | -1 |  ||  | 3 |  |
+|- - - - - - - - - - - - - - - - - - - - - 
+|  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  |
+|- - - - - - - - - - - - - - - - - - - - - 
+|  | -1 |  ||  | -1 |  ||  | -1 |  ||  | 0 |  |
+ - - - - - - - - - - - - - - - - - - - -- -
+
+T = 4
+ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+|  | -1 |  ||  | -1 |  ||  | -1 |  ||  | 58 |  |
+|- - - - - - - - - - - - - - - - - - - - - 
+|  | -1 |  ||  | 13 |  ||  | 4 |  ||  | -1 |  |
+|- - - - - - - - - - - - - - - - - - - - - 
+|  | -1 |  ||  | -1 |  ||  | -1 |  ||  | 12 |  |
+|- - - - - - - - - - - - - - - - - - - - - 
+|  | -1 |  ||  | -1 |  ||  | -1 |  ||  | 14 |  |
+ - - - - - - - - - - - - - - - - - - - -- -
+
+T = 5
+ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+|  | 9 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  |
+|- - - - - - - - - - - - - - - - - - - - - 
+|  | 1 |  ||  | -1 |  ||  | -1 |  ||  | 3 |  |
+|- - - - - - - - - - - - - - - - - - - - - 
+|  | -1 |  ||  | -1 |  ||  | 99 |  ||  | -1 |  |
+|- - - - - - - - - - - - - - - - - - - - - 
+|  | -1 |  ||  | -1 |  ||  | -1 |  ||  | 0 |  |
+ - - - - - - - - - - - - - - - - - - - -- -
+
+T = 6
+ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+|  | -1 |  ||  | -1 |  ||  | -1 |  ||  | 58 |  |
+|- - - - - - - - - - - - - - - - - - - - - 
+|  | -1 |  ||  | 13 |  ||  | 4 |  ||  | -1 |  |
+|- - - - - - - - - - - - - - - - - - - - - 
+|  | -1 |  ||  | -1 |  ||  | 6 |  ||  | 12 |  |
+|- - - - - - - - - - - - - - - - - - - - - 
+|  | -1 |  ||  | -1 |  ||  | -1 |  ||  | 14 |  |
+ - - - - - - - - - - - - - - - - - - - -- -
+
+T = 7
+ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+|  | 9 |  ||  | 10 |  ||  | -1 |  ||  | -1 |  |
+|- - - - - - - - - - - - - - - - - - - - - 
+|  | 1 |  ||  | -1 |  ||  | -1 |  ||  | 3 |  |
+|- - - - - - - - - - - - - - - - - - - - - 
+|  | -1 |  ||  | -1 |  ||  | 99 |  ||  | -1 |  |
+|- - - - - - - - - - - - - - - - - - - - - 
+|  | -1 |  ||  | -1 |  ||  | 7 |  ||  | 0 |  |
+ - - - - - - - - - - - - - - - - - - - -- -
+
+T = 8
+ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+|  | -1 |  ||  | -1 |  ||  | -1 |  ||  | 58 |  |
+|- - - - - - - - - - - - - - - - - - - - - 
+|  | -1 |  ||  | 13 |  ||  | 4 |  ||  | -1 |  |
+|- - - - - - - - - - - - - - - - - - - - - 
+|  | -1 |  ||  | -1 |  ||  | 6 |  ||  | 12 |  |
+|- - - - - - - - - - - - - - - - - - - - - 
+|  | -1 |  ||  | 2 |  ||  | 8 |  ||  | 14 |  |
+ - - - - - - - - - - - - - - - - - - - -- -
+
+T = 9
+ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+|  | 9 |  ||  | 10 |  ||  | -1 |  ||  | -1 |  |
+|- - - - - - - - - - - - - - - - - - - - - 
+|  | 1 |  ||  | -1 |  ||  | -1 |  ||  | 3 |  |
+|- - - - - - - - - - - - - - - - - - - - - 
+|  | -1 |  ||  | -1 |  ||  | 99 |  ||  | -1 |  |
+|- - - - - - - - - - - - - - - - - - - - - 
+|  | -1 |  ||  | 11 |  ||  | 7 |  ||  | 0 |  |
+ - - - - - - - - - - - - - - - - - - - -- -
+
+T = 10
+ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+|  | -1 |  ||  | -1 |  ||  | -1 |  ||  | 58 |  |
+|- - - - - - - - - - - - - - - - - - - - - 
+|  | -1 |  ||  | 13 |  ||  | 4 |  ||  | -1 |  |
+|- - - - - - - - - - - - - - - - - - - - - 
+|  | -1 |  ||  | -1 |  ||  | 6 |  ||  | 12 |  |
+|- - - - - - - - - - - - - - - - - - - - - 
+|  | -1 |  ||  | 2 |  ||  | 8 |  ||  | 14 |  |
+ - - - - - - - - - - - - - - - - - - - -- -
+
+T = 11
+ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+|  | 9 |  ||  | 10 |  ||  | -1 |  ||  | -1 |  |
+|- - - - - - - - - - - - - - - - - - - - - 
+|  | 1 |  ||  | -1 |  ||  | -1 |  ||  | 3 |  |
+|- - - - - - - - - - - - - - - - - - - - - 
+|  | -1 |  ||  | -1 |  ||  | 99 |  ||  | -1 |  |
+|- - - - - - - - - - - - - - - - - - - - - 
+|  | -1 |  ||  | 11 |  ||  | 7 |  ||  | -1 |  |
+ - - - - - - - - - - - - - - - - - - - -- -
+
+T = 12
+ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+|  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  |
+|- - - - - - - - - - - - - - - - - - - - - 
+|  | -1 |  ||  | 13 |  ||  | 4 |  ||  | -1 |  |
+|- - - - - - - - - - - - - - - - - - - - - 
+|  | -1 |  ||  | -1 |  ||  | 6 |  ||  | -1 |  |
+|- - - - - - - - - - - - - - - - - - - - - 
+|  | -1 |  ||  | 2 |  ||  | 8 |  ||  | 14 |  |
+ - - - - - - - - - - - - - - - - - - - -- -
+
+T = 13
+ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+|  | 9 |  ||  | 10 |  ||  | -1 |  ||  | -1 |  |
+|- - - - - - - - - - - - - - - - - - - - - 
+|  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  |
+|- - - - - - - - - - - - - - - - - - - - - 
+|  | -1 |  ||  | -1 |  ||  | 99 |  ||  | -1 |  |
+|- - - - - - - - - - - - - - - - - - - - - 
+|  | -1 |  ||  | 11 |  ||  | 7 |  ||  | -1 |  |
+ - - - - - - - - - - - - - - - - - - - -- -
+
+T = 14
+ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+|  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  |
+|- - - - - - - - - - - - - - - - - - - - - 
+|  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  |
+|- - - - - - - - - - - - - - - - - - - - - 
+|  | -1 |  ||  | -1 |  ||  | 6 |  ||  | -1 |  |
+|- - - - - - - - - - - - - - - - - - - - - 
+|  | -1 |  ||  | 2 |  ||  | 8 |  ||  | -1 |  |
+ - - - - - - - - - - - - - - - - - - - -- -
+
+T = 15
+ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+|  | -1 |  ||  | 10 |  ||  | -1 |  ||  | -1 |  |
+|- - - - - - - - - - - - - - - - - - - - - 
+|  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  |
+|- - - - - - - - - - - - - - - - - - - - - 
+|  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  |
+|- - - - - - - - - - - - - - - - - - - - - 
+|  | -1 |  ||  | 11 |  ||  | 7 |  ||  | -1 |  |
+ - - - - - - - - - - - - - - - - - - - -- -
+
+T = 16
+ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+|  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  |
+|- - - - - - - - - - - - - - - - - - - - - 
+|  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  |
+|- - - - - - - - - - - - - - - - - - - - - 
+|  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  |
+|- - - - - - - - - - - - - - - - - - - - - 
+|  | -1 |  ||  | 2 |  ||  | 8 |  ||  | -1 |  |
+ - - - - - - - - - - - - - - - - - - - -- -
+
+T = 17
+ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+|  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  |
+|- - - - - - - - - - - - - - - - - - - - - 
+|  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  |
+|- - - - - - - - - - - - - - - - - - - - - 
+|  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  |
+|- - - - - - - - - - - - - - - - - - - - - 
+|  | -1 |  ||  | 11 |  ||  | -1 |  ||  | -1 |  |
+ - - - - - - - - - - - - - - - - - - - -- -
+
+T = 18
+ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+|  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  |
+|- - - - - - - - - - - - - - - - - - - - - 
+|  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  |
+|- - - - - - - - - - - - - - - - - - - - - 
+|  | -1 |  ||  | -1 |  ||  | -1 |  ||  | -1 |  |
+|- - - - - - - - - - - - - - - - - - - - - 
+|  | -1 |  ||  | 57 |  ||  | -1 |  ||  | -1 |  |
+ - - - - - - - - - - - - - - - - - - - -- -
+
+Id: 10 name: add time: 0 pe: 1 Rout: -1 opA: RCL opB: R0 immediate: 0
+
+Id: 99 name: mul time: 0 pe: 10 Rout: -1 opA: RCT opB: -1 immediate: 0
+
+Id: 6 name: add time: 1 pe: 10 Rout: -1 opA: ROUT opB: R0 immediate: 0
+
+Id: 0 name: phi time: 0 pe: 15 Rout: -1 opA: ZERO opB: RCT immediate: 0
+
+Id: 14 name: beq time: 1 pe: 15 Rout: -1 opA: RCT opB: R0 immediate: 0
+
+Id: 7 name: load time: 0 pe: 14 Rout: -1 opA: RCT opB: -1 immediate: 0
+
+Id: 8 name: sub time: 1 pe: 14 Rout: -1 opA: ROUT opB: R0 immediate: 0
+
+Id: 11 name: bzfa time: 0 pe: 13 Rout: -1 opA: RCB opB: ROUT immediate: 0
+
+Id: 2 name: phi time: 1 pe: 13 Rout: -1 opA: R0 opB: ROUT immediate: 0
+
+Id: 9 name: xor time: 0 pe: 0 Rout: -1 opA: RCB opB: CONST immediate: -1
+
+Id: 3 name: add time: 0 pe: 7 Rout: -1 opA: R0 opB: RCT immediate: 0
+
+Id: 1 name: phi time: 0 pe: 4 Rout: -1 opA: ZERO opB: RCR immediate: 0
+
+Id: 12 name: add time: 1 pe: 11 Rout: -1 opA: RCB opB: 1 immediate: 1
+
+Id: 13 name: add time: 1 pe: 5 Rout: -1 opA: RCL opB: 1 immediate: 1
+
+Id: 4 name: load time: 1 pe: 6 Rout: -1 opA: RCR opB: -1 immediate: 0
+
+Id: 58 name: mul time: 1 pe: 3 Rout: -1 opA: RCT opB: CONST immediate: 4
