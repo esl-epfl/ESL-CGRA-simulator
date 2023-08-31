@@ -74,8 +74,15 @@ class CGRA:
         self.store_idx  = [0]*N_COLS
         self.exit       = False
 
-    def run( self, pr="ROUT"):
-        while not self.step(pr): print("-------")
+    def run( self, pr, limit ):
+        steps = 0
+        while not self.step(pr):
+            print("-------")
+            steps += 1
+            if steps > limit:
+                print("EXECUTION LIMIT REACHED (",limit,"steps)")
+                print("Extend the execution by calling the run with argument limit=<steps>.")
+                break
         return self.outputs, self.memory
 
     def step( self, prs="ROUT" ):
@@ -128,7 +135,7 @@ class CGRA:
 
     def load_indirect( self, add ):
         for row in self.memory[1:]:
-            if row[0] == add:
+            if int(row[0]) == add:
                 return int(row[1])
         return -1
 
@@ -163,10 +170,12 @@ class PE:
         return self.flags[flag]
 
     def fetch_val( self, val):
-        if val.isnumeric():
+        if val.lstrip('-+').isnumeric():
             return int(val)
         if val == 'ROUT':
             return int( self.old_out)
+        if val == 'ZERO':
+            return 0
         if val in self.regs:
             return int( self.regs[val])
         return int(self.parent.get_neighbour_out( self.row, self.col, val ))
@@ -232,7 +241,7 @@ class PE:
 
         elif self.op in self.ops_lwi:
             des = instr[1]
-            add = instr[2]
+            add = self.fetch_val( instr[2] )
             ret = self.parent.load_indirect(add)
             if des in self.regs: self.regs[des] = ret
             else: self.out = ret
@@ -281,7 +290,7 @@ class PE:
         return c_int32( val1 & val2).value
 
     def lxor( val1, val2 ):
-        return c_int32( val1 ^ val2).value
+        return c_int32( ((val1& MAX_32b) ^ (val2& MAX_32b)) & MAX_32b).value
 
     def lnand( val1, val2 ):
         return c_int32( ~( val1 & val2 ) & MAX_32b ).value
@@ -339,7 +348,7 @@ class PE:
     ops_jump    = { 'JUMP'      : '' }
     ops_exit    = { 'EXIT'      : '' }
 
-def run( kernel, version="", pr="ROUT" ):
+def run( kernel, version="", pr="ROUT", limit=100 ):
     ker = []
     inp = []
     oup = []
@@ -352,7 +361,7 @@ def run( kernel, version="", pr="ROUT" ):
     with open( kernel + "/"+FILENAME_MEM+EXT, 'r') as f:
         for row in csv.reader(f): mem.append(row)
 
-    oup, mem = CGRA( ker, mem, inp, oup ).run(pr)
+    oup, mem = CGRA( ker, mem, inp, oup ).run(pr, limit)
 
     with open( kernel + "/"+FILENAME_MEM_O+EXT, 'w+') as f:
         for row in mem: csv.writer(f).writerow(row)

@@ -25,6 +25,14 @@ def kernel_new( name, dim=4 ):
     print("Kernel", name, "created successfuly!")
 
 
+def kernel_clear_memory( name ):
+    import csv
+    filedir     = "./"+name+"/"
+    with open(filedir + FILENAME_MEM + EXT,"w+") as f:
+        csv.writer(f).writerow(["Address", "Data"])
+        csv.writer(f).writerow(["0", "0"])
+
+
 def kernel_add_memory_region( name, start, vals ):
     import csv
     mem     = []

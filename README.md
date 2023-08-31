@@ -141,3 +141,10 @@ To preserve the memory untouched, a copy of the resulting memory is generated as
 
 
 ## Exporting the results
+
+
+
+
+# Additional notes
+
+* If you make any modification to the utility scripts, you might need to restart the notebook for the changes to apply.
