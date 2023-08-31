@@ -13,7 +13,8 @@ def convert(infile, outfile, version=""):
 
 
     reading_conf = False
-    time_stamp = 0
+    last_time_stamp = 0
+    current_time_stamp = 0
     configuration = []
 
     conf_set = []
@@ -24,19 +25,19 @@ def convert(infile, outfile, version=""):
         if line[0:3] == "T =":
             reading_conf = True
             configuration = []
+            current_time_stamp = int(line.split(" ")[-1])
 
             # stop reading, reached the last configuration
-            if time_stamp > int(line[4]):
+            if last_time_stamp > current_time_stamp:
                 reading_conf = False
                 break
             else:
                 # Here I only read the timestamp
-                # print(line)
-                time_stamp = int(line[4])
+                last_time_stamp = current_time_stamp
                 conf_set.append(configuration)
 
         # Here I read the actual instructions
-        if reading_conf:
+        if reading_conf:\
             configuration.append(line)
 
     # counts the nodes and infer rows and columns (always assumes a squared mesh)
@@ -49,10 +50,14 @@ def convert(infile, outfile, version=""):
         writer = csv.writer(f)
 
         for conf in conf_set:
-            time = conf[0]
-            instrs = conf[1:]
 
-            writer.writerow(time[-2])
+            time = conf[0]                          # Line with the timestamp
+            time = int(time.split(" ")[-1][:-1])    # extract just the timestamp without the "\n" and parse to int
+            
+            instrs = conf[1:]   # Set of all instructions in the current configuration
+
+            # Write the timestamp
+            writer.writerow([time])
 
             rows = [[instrs[(n_cols * r) + c][:-1] for c in range(n_cols)] for r in range(n_rows)]
 
