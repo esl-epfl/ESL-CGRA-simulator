@@ -18,6 +18,7 @@ MAX_32b = 0xFFFFFFFF
 
 srcs    = ['ZERO', 'SELF', 'RCL', 'RCR', 'RCT', 'RCB',  'R0', 'R1', 'R2', 'R3', 'IMM']
 dsts    = ['SELF', 'RCL', 'RCR', 'RCT', 'RCB','R0', 'R1', 'R2', 'R3']
+regs    = dsts[-4:]
 
 class INSTR:
     def __init__( self,matrix):
@@ -27,6 +28,38 @@ class INSTR:
 def ker_parse( data ):
     instrs = int(len(data)/( INSTR_SIZE  )) # Always have a CSV with as many csv-columns as CGA-columns. Each instruction starts with the instruction timestamp i nthe first column. The next instruction must be immediately after the last row of this instruction.
     return [ INSTR( data[r_i*INSTR_SIZE:(r_i+1)*INSTR_SIZE][0:] ) for r_i in range(instrs) ]
+
+
+def print_out( prs, outs, insts, ops, reg ):
+    if PRINT_OUTS:
+        out_string = ""
+
+        if type(prs) == str:
+            prs = [prs]
+
+        for pr in prs:
+            pnt = []
+            match pr:
+                case "ROUT" : pnt = outs
+                case "INST" : pnt = insts
+                case "OPS"  : pnt = ops
+                case "R0"   : pnt = reg[0]
+                case "R1"   : pnt = reg[1]
+                case "R2"   : pnt = reg[2]
+                case "R3"   : pnt = reg[3]
+                case _:
+                    pass
+
+            out_string += "["
+            for i in range(len(pnt)):
+                out_string += "{{{}:4}}".format(i)
+                if i == (len(pnt) - 1):
+                    out_string += "]    "
+                else:
+                    out_string += ", "
+            out_string = out_string.format(*[o for o in pnt])
+        print(out_string)
+
 
 class CGRA:
     def __init__( self, kernel, memory, inputs, outputs ):
@@ -41,11 +74,11 @@ class CGRA:
         self.store_idx  = [0]*N_COLS
         self.exit       = False
 
-    def run(self):
-        while not self.step(): print("-------")
+    def run( self, pr="ROUT"):
+        while not self.step(pr): print("-------")
         return self.outputs, self.memory
 
-    def step( self):
+    def step( self, prs="ROUT" ):
         for r in range(N_ROWS):
             for c in range(N_COLS):
                 self.cells[r][c].update()
@@ -56,16 +89,11 @@ class CGRA:
                 b ,e = self.cells[r][c].exec( op )
                 if b != 0: self.instr2exec = b - 1 #To avoid more logic afterwards
                 if e != 0: self.exit = True
-            outs = [ self.cells[r][i].out for i in range(N_COLS) ]
-            if PRINT_OUTS:
-                out_string = "["
-                for i in range(len(outs)):
-                    out_string += "{{{}:4}}".format(i)
-                    if i == (len(outs) - 1):
-                        out_string += "]"
-                    else:
-                        out_string += ", "
-                print(out_string.format(*[o for o in outs]))
+            outs    = [ self.cells[r][i].out        for i in range(N_COLS) ]
+            insts   = [ self.cells[r][i].instr      for i in range(N_COLS) ]
+            ops     = [ self.cells[r][i].op         for i in range(N_COLS) ]
+            reg     = [[ self.cells[r][i].regs[regs[x]]   for i in range(N_COLS) ] for x in range(len(regs)) ]
+            print_out( prs, outs, insts, ops, reg )
 
         self.instr2exec += 1
         self.cycles += 1
@@ -125,6 +153,8 @@ class PE:
         self.old_out    = 0
         self.out        = 0
         self.regs       = {'R0':0, 'R1':0, 'R2':0, 'R3':0 }
+        self.op         = ""
+        self.instr      = ""
 
     def get_out( self ):
         return self.old_out
@@ -157,68 +187,69 @@ class PE:
         self.flags["branch"]    = 0
 
     def run_instr( self, instr):
-        instr   = instr.replace(',', ' ') # Remove the commas so we can speparate arguments by spaces
-        instr   = instr.split()        # Split into chunks
+        instr   = instr.replace(',', ' ')   # Remove the commas so we can speparate arguments by spaces
+        self.instr = instr                  # Save this string as instruction to show
+        instr   = instr.split()             # Split into chunks
         try:
-            op      = instr[0]
+            self.op      = instr[0]
         except:
-            op = instr
+            self.op = instr
 
-        if op in self.ops_arith:
+        if self.op in self.ops_arith:
             des     = instr[1]
             val1    = self.fetch_val( instr[2] )
             val2    = self.fetch_val( instr[3] )
-            ret     = self.ops_arith[op]( val1, val2)
+            ret     = self.ops_arith[self.op]( val1, val2)
             if des in self.regs: self.regs[des] = ret
             else: self.out = ret
 
-        elif op in self.ops_cond:
+        elif self.op in self.ops_cond:
             des     = instr[1]
             val1    = self.fetch_val( instr[2] )
             val2    = self.fetch_val( instr[3] )
             src     = instr[4]
-            method  = self.ops_cond[op]
+            method  = self.ops_cond[self.op]
             ret     = method(self, val1, val2, src)
             if des in self.regs: self.regs[des] = ret
             else: self.out = ret
 
-        elif op in self.ops_branch:
+        elif self.op in self.ops_branch:
             val1    = self.fetch_val( instr[1] )
             val2    = self.fetch_val( instr[2] )
             branch  = self.fetch_val( instr[3] )
-            method = self.ops_branch[op]
+            method = self.ops_branch[self.op]
             method(self, val1, val2, branch)
 
-        elif op in self.ops_lwd:
+        elif self.op in self.ops_lwd:
             des = instr[1]
             ret = self.parent.load_direct( self.col )
             if des in self.regs: self.regs[des] = ret
             else: self.out = ret
 
-        elif op in self.ops_swd:
+        elif self.op in self.ops_swd:
             val = self.fetch_val( instr[1] )
             self.parent.store_direct( self.col, val )
 
-        elif op in self.ops_lwi:
+        elif self.op in self.ops_lwi:
             des = instr[1]
             add = instr[2]
             ret = self.parent.load_indirect(add)
             if des in self.regs: self.regs[des] = ret
             else: self.out = ret
 
-        elif op in self.ops_swi:
+        elif self.op in self.ops_swi:
             add = self.fetch_val( instr[1] )
             val = self.fetch_val( instr[2] )
             self.parent.store_indirect( add, val )
             pass
 
-        elif op in self.ops_nop:
+        elif self.op in self.ops_nop:
             pass # Intentional
 
-        elif op in self.ops_jump:
+        elif self.op in self.ops_jump:
             self.flags['branch'] = val1
 
-        elif op in self.ops_exit:
+        elif self.op in self.ops_exit:
             self.flags['exit'] = 1
 
     def sadd( val1, val2 ):
@@ -308,7 +339,7 @@ class PE:
     ops_jump    = { 'JUMP'      : '' }
     ops_exit    = { 'EXIT'      : '' }
 
-def run( kernel, version="" ):
+def run( kernel, version="", pr="ROUT" ):
     ker = []
     inp = []
     oup = []
@@ -321,7 +352,7 @@ def run( kernel, version="" ):
     with open( kernel + "/"+FILENAME_MEM+EXT, 'r') as f:
         for row in csv.reader(f): mem.append(row)
 
-    oup, mem = CGRA( ker, mem, inp, oup ).run()
+    oup, mem = CGRA( ker, mem, inp, oup ).run(pr)
 
     with open( kernel + "/"+FILENAME_MEM_O+EXT, 'w+') as f:
         for row in mem: csv.writer(f).writerow(row)
