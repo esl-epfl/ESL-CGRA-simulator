@@ -39,16 +39,13 @@ def print_out( prs, outs, insts, ops, reg ):
 
         for pr in prs:
             pnt = []
-            match pr:
-                case "ROUT" : pnt = outs
-                case "INST" : pnt = insts
-                case "OPS"  : pnt = ops
-                case "R0"   : pnt = reg[0]
-                case "R1"   : pnt = reg[1]
-                case "R2"   : pnt = reg[2]
-                case "R3"   : pnt = reg[3]
-                case _:
-                    pass
+            if      pr == "ROUT" : pnt = outs
+            elif    pr == "INST" : pnt = insts
+            elif    pr == "OPS"  : pnt = ops
+            elif    pr == "R0"   : pnt = reg[0]
+            elif    pr == "R1"   : pnt = reg[1]
+            elif    pr == "R2"   : pnt = reg[2]
+            elif    pr == "R3"   : pnt = reg[3]
 
             out_string += "["
             for i in range(len(pnt)):
