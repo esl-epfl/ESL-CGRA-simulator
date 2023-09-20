@@ -275,14 +275,8 @@ class PE:
         return c_int32(val1 << val2).value
 
     def srt( val1, val2 ):
-        interm_result = c_int32(val1 >> val2).value
-        if (interm_result > 0):
-            return c_int32(val1 >> val2).value
-        else:
-            max=0
-            for i in range(val2):
-                max += 2**(31-i)
-            return c_int32( interm_result - max).value
+        interm_result = c_int32(val1).value & 0xFFFFFFFF
+        return c_int32(interm_result >> val2).value
 
     def sra( val1, val2 ):
         return c_int32(val1 >> val2).value
