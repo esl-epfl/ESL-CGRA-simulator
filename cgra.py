@@ -275,7 +275,8 @@ class PE:
         return c_int32(val1 << val2).value
 
     def srt( val1, val2 ):
-        return c_int32(val1 >> val2).value # ToDo: Fix this one
+        interm_result = c_int32(val1).value & 0xFFFFFFFF
+        return c_int32(interm_result >> val2).value
 
     def sra( val1, val2 ):
         return c_int32(val1 >> val2).value
