@@ -114,7 +114,7 @@ class CGRA:
 
     def get_neighbour_out( self, r, c, dir ):
         n_r, n_c = self.get_neighbour_address( r, c, dir )
-        return self.cells[n_r][n_c].get_out() #fix this. This does not know what cgra is
+        return self.cells[n_r][n_c].get_out()
 
     def get_neighbour_flag( self, r, c, dir, flag ):
         n_r, n_c = self.get_neighbour_address( r, c, dir )
