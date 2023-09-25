@@ -315,6 +315,9 @@ class PE:
 
     def bge( self,  val1, val2, branch ):
         self.flags['branch'] = branch if val1 >= val2 else self.flags['branch']
+    
+    def blt( self,  val1, val2, branch ):
+        self.flags['branch'] = branch if val1 < val2 else self.flags['branch']
 
     ops_arith   = { 'SADD'      : sadd,
                     'SSUB'      : ssub,
@@ -335,6 +338,7 @@ class PE:
 
     ops_branch  = { 'BEQ'       : beq,
                     'BNE'       : bne,
+                    'BLT'       : blt,
                     'BGE'       : bge }
 
     ops_lwd     = { 'LWD'       : '' }
