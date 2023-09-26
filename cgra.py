@@ -137,8 +137,8 @@ class CGRA:
         return -1
 
     def store_indirect( self, add, val):
-        for i in range(len(self.memory)):
-            if self.memory[i][0] == add:
+        for i in range(1,len(self.memory)):
+            if int(self.memory[i][0]) == add:
                 self.memory[i][1] = val
                 return
         self.memory.append([add, val])
