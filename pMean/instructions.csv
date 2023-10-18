@@ -1,0 +1,71 @@
+0,,,
+"SADD ROUT, 0, 518",NOP,NOP,NOP
+"SADD ROUT, 0, 106",NOP,NOP,NOP
+NOP,NOP,NOP,NOP
+NOP,NOP,NOP,NOP
+1,,,
+LWD ROUT,NOP,NOP,NOP
+"SSUB ROUT, RCT, ROUT",NOP,NOP,NOP
+SWD RCT,NOP,NOP,NOP
+NOP,NOP,NOP,NOP
+2,,,
+"SADD ROUT, ROUT, RCB",NOP,NOP,NOP
+"SRT ROUT, ROUT, 2",NOP,NOP,NOP
+NOP,NOP,NOP,NOP
+"BNE RCT, -1, 1",NOP,NOP,NOP
+3,,,
+EXIT,NOP,NOP,NOP
+NOP,NOP,NOP,NOP
+NOP,NOP,NOP,NOP
+NOP,NOP,NOP,NOP
+,,,
+,,,
+,,,
+,,,
+,,,
+,,,
+,,,
+,,,
+,,,
+,,,
+,,,
+,,,
+,,,
+,,,
+,,,
+,,,
+,,,
+,,,
+,,,
+,,,
+,,,
+,,,
+,,,
+,,,
+,,,
+,,,
+,,,
+,,,
+,,,
+,,,
+,,,
+,,,
+,,,
+,,,
+,,,
+,,,
+,,,
+,,,
+,,,
+,,,
+,,,
+,,,
+,,,
+,,,
+,,,
+,,,
+,,,
+,,,
+,,,
+,,,
+,,,
