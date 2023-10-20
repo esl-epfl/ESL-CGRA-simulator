@@ -25,7 +25,7 @@ def export(infile, outfile):
             for instr in row:
                 out_string += "{}\n".format(instr)
 
-
+    out_string += "T = 0\n"
     with open(outfile, "w") as f:
         f.write(out_string)
 
