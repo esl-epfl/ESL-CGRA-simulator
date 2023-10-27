@@ -5,11 +5,11 @@ import csv
 from kernels import *
 
 # CGRA from left to right, top to bottom
-N_ROWS      = 4
-N_COLS      = 4
-INSTR_SIZE  = N_ROWS+1
-MAX_COL     = N_COLS - 1
-MAX_ROW     = N_ROWS - 1
+#N_ROWS      = 4
+#N_COLS      = 4
+#INSTR_SIZE  = N_ROWS+1
+#MAX_COL     = N_COLS - 1
+#MAX_ROW     = N_ROWS - 1
 
 PRINT_OUTS  = 1
 
@@ -350,11 +350,23 @@ class PE:
     ops_jump    = { 'JUMP'      : '' }
     ops_exit    = { 'EXIT'      : '' }
 
-def run( kernel, version="", pr="ROUT", limit=100 ):
+def run( kernel, version="", rows=4, cols=4, pr="ROUT", limit=100 ):
     ker = []
     inp = []
     oup = []
     mem = []
+
+    global N_ROWS
+    global N_COLS
+    global INSTR_SIZE
+    global MAX_COL
+    global MAX_ROW
+
+    N_ROWS = rows
+    N_COLS = cols
+    INSTR_SIZE = N_ROWS+1
+    MAX_COL = N_COLS - 1
+    MAX_ROW = N_ROWS - 1
 
     with open( kernel + "/"+FILENAME_INSTR+version+EXT, 'r') as f:
         for row in csv.reader(f): ker.append(row)
