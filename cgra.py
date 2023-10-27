@@ -207,7 +207,7 @@ class PE:
             val2    = self.fetch_val( instr[3] )
             ret     = self.ops_arith[self.op]( val1, val2)
             if des in self.regs: self.regs[des] = ret
-            else: self.out = ret
+            self.out = ret
 
         elif self.op in self.ops_cond:
             des     = instr[1]
@@ -217,7 +217,7 @@ class PE:
             method  = self.ops_cond[self.op]
             ret     = method(self, val1, val2, src)
             if des in self.regs: self.regs[des] = ret
-            else: self.out = ret
+            self.out = ret
 
         elif self.op in self.ops_branch:
             val1    = self.fetch_val( instr[1] )
@@ -230,7 +230,7 @@ class PE:
             des = instr[1]
             ret = self.parent.load_direct( self.col )
             if des in self.regs: self.regs[des] = ret
-            else: self.out = ret
+            self.out = ret
 
         elif self.op in self.ops_swd:
             val = self.fetch_val( instr[1] )
@@ -241,7 +241,7 @@ class PE:
             add = self.fetch_val( instr[2] )
             ret = self.parent.load_indirect(add)
             if des in self.regs: self.regs[des] = ret
-            else: self.out = ret
+            self.out = ret
 
         elif self.op in self.ops_swi:
             add = self.fetch_val( instr[1] )
