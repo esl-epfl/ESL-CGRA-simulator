@@ -206,8 +206,6 @@ class PE:
             val1    = self.fetch_val( instr[2] )
             val2    = self.fetch_val( instr[3] )
             ret     = self.ops_arith[self.op]( val1, val2)
-            #if (self.op == 'SMUL'):
-            #    print("ret = ", ret, ", val1 = ", val1, ", val2 = ", val2, ", des = ", des, ", instr[2] =", instr[2], ", instr[3] =", instr[3] )
             if des in self.regs: self.regs[des] = ret
             self.out = ret
 
