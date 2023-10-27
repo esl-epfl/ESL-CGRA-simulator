@@ -137,8 +137,8 @@ class CGRA:
         return -1
 
     def store_indirect( self, add, val):
-        for i in range(len(self.memory)):
-            if self.memory[i][0] == add:
+        for i in range(1,len(self.memory)):
+            if int(self.memory[i][0]) == add:
                 self.memory[i][1] = val
                 return
         self.memory.append([add, val])
@@ -275,7 +275,7 @@ class PE:
         return c_int32(val1 << val2).value
 
     def srt( val1, val2 ):
-        interm_result = c_int32(val1).value & 0xFFFFFFFF
+        interm_result = (c_int32(val1).value & MAX_32b)
         return c_int32(interm_result >> val2).value
 
     def sra( val1, val2 ):
@@ -315,6 +315,9 @@ class PE:
 
     def bge( self,  val1, val2, branch ):
         self.flags['branch'] = branch if val1 >= val2 else self.flags['branch']
+    
+    def blt( self,  val1, val2, branch ):
+        self.flags['branch'] = branch if val1 < val2 else self.flags['branch']
 
     ops_arith   = { 'SADD'      : sadd,
                     'SSUB'      : ssub,
@@ -335,6 +338,7 @@ class PE:
 
     ops_branch  = { 'BEQ'       : beq,
                     'BNE'       : bne,
+                    'BLT'       : blt,
                     'BGE'       : bge }
 
     ops_lwd     = { 'LWD'       : '' }
