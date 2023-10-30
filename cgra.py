@@ -60,7 +60,12 @@ def print_out( prs, outs, insts, ops, reg ):
 
 class CGRA:
     def __init__( self, kernel, memory, inputs, outputs ):
-        self.cells      = [[ PE( self, c,r) for r in range(N_ROWS)] for c in range(N_COLS)]
+        self.cells = []
+        for r in range(N_ROWS):
+            list = []
+            for c in range(N_COLS):
+                list.append( PE( self, r, c) )
+            self.cells.append(list)
         self.instrs     = ker_parse( kernel )
         self.memory     = memory
         self.inputs     = inputs
