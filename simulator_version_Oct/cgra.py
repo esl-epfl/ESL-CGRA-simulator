@@ -60,12 +60,7 @@ def print_out( prs, outs, insts, ops, reg ):
 
 class CGRA:
     def __init__( self, kernel, memory, inputs, outputs ):
-        self.cells = []
-        for r in range(N_ROWS):
-            list = []
-            for c in range(N_COLS):
-                list.append( PE( self, r, c) )
-            self.cells.append(list)
+        self.cells      = [[ PE( self, c,r) for r in range(N_ROWS)] for c in range(N_COLS)]
         self.instrs     = ker_parse( kernel )
         self.memory     = memory
         self.inputs     = inputs
@@ -91,11 +86,10 @@ class CGRA:
         for r in range(N_ROWS):
             for c in range(N_COLS):
                 self.cells[r][c].update()
-        instr2exec = self.instr2exec
-        if PRINT_OUTS: print("Instr = ", self.cycles, "(",instr2exec,")")
+        if PRINT_OUTS: print("Instr = ", self.cycles, "(",self.instr2exec,")")
         for r in range(N_ROWS):
             for c in range(N_COLS):
-                op =  self.instrs[instr2exec].ops[r][c]
+                op =  self.instrs[self.instr2exec].ops[r][c]
                 b ,e = self.cells[r][c].exec( op )
                 if b != 0: self.instr2exec = b - 1 #To avoid more logic afterwards
                 if e != 0: self.exit = True
@@ -120,7 +114,7 @@ class CGRA:
 
     def get_neighbour_out( self, r, c, dir ):
         n_r, n_c = self.get_neighbour_address( r, c, dir )
-        return self.cells[n_r][n_c].get_out()
+        return self.cells[n_r][n_c].get_out() #fix this. This does not know what cgra is
 
     def get_neighbour_flag( self, r, c, dir, flag ):
         n_r, n_c = self.get_neighbour_address( r, c, dir )
@@ -213,7 +207,7 @@ class PE:
             val2    = self.fetch_val( instr[3] )
             ret     = self.ops_arith[self.op]( val1, val2)
             if des in self.regs: self.regs[des] = ret
-            self.out = ret
+            else: self.out = ret
 
         elif self.op in self.ops_cond:
             des     = instr[1]
@@ -223,7 +217,7 @@ class PE:
             method  = self.ops_cond[self.op]
             ret     = method(self, val1, val2, src)
             if des in self.regs: self.regs[des] = ret
-            self.out = ret
+            else: self.out = ret
 
         elif self.op in self.ops_branch:
             val1    = self.fetch_val( instr[1] )
@@ -231,13 +225,12 @@ class PE:
             branch  = self.fetch_val( instr[3] )
             method = self.ops_branch[self.op]
             method(self, val1, val2, branch)
-            self.out = branch
 
         elif self.op in self.ops_lwd:
             des = instr[1]
             ret = self.parent.load_direct( self.col )
             if des in self.regs: self.regs[des] = ret
-            self.out = ret
+            else: self.out = ret
 
         elif self.op in self.ops_swd:
             val = self.fetch_val( instr[1] )
@@ -248,7 +241,7 @@ class PE:
             add = self.fetch_val( instr[2] )
             ret = self.parent.load_indirect(add)
             if des in self.regs: self.regs[des] = ret
-            self.out = ret
+            else: self.out = ret
 
         elif self.op in self.ops_swi:
             add = self.fetch_val( instr[1] )
@@ -322,7 +315,7 @@ class PE:
 
     def bge( self,  val1, val2, branch ):
         self.flags['branch'] = branch if val1 >= val2 else self.flags['branch']
-
+    
     def blt( self,  val1, val2, branch ):
         self.flags['branch'] = branch if val1 < val2 else self.flags['branch']
 

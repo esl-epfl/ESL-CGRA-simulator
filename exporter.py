@@ -29,4 +29,3 @@ def export(infile, outfile):
     with open(outfile, "w") as f:
         f.write(out_string)
 
-
