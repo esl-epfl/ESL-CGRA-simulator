@@ -131,7 +131,7 @@ class CGRA:
         self.load_idx[c] += incr
         return int(ret)
 
-    def store_direct( self, c, val incr ):
+    def store_direct( self, c, val, incr ):
         if self.store_idx[c] >= len(self.outputs): self.outputs.append([0]*N_COLS)
         self.outputs[ self.store_idx[c] ][c] = val
         self.store_idx[c] += incr
@@ -235,14 +235,14 @@ class PE:
 
         elif self.op in self.ops_lwd:
             des = instr[1]
-            incr = instr[2]
+            incr = self.fetch_val(instr[2])
             ret = self.parent.load_direct( self.col, incr )
             if des in self.regs: self.regs[des] = ret
             self.out = ret
 
         elif self.op in self.ops_swd:
             val = self.fetch_val( instr[1] )
-            incr = instr[2]
+            incr = self.fetch_val(instr[2])
             self.parent.store_direct( self.col, val, incr )
 
         elif self.op in self.ops_lwi:
