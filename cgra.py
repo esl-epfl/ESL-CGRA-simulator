@@ -365,16 +365,16 @@ def run( kernel, version="", pr="ROUT", limit=100 ):
 
     with open( kernel + "/"+FILENAME_INSTR+version+EXT, 'r') as f:
         for row in csv.reader(f): ker.append(row)
-    with open( kernel + "/"+FILENAME_INP+EXT, 'r') as f:
+    with open( kernel + "/"+FILENAME_INP+version+EXT, 'r') as f:
         for row in csv.reader(f): inp.append(row)
-    with open( kernel + "/"+FILENAME_MEM+EXT, 'r') as f:
+    with open( kernel + "/"+FILENAME_MEM+version+EXT, 'r') as f:
         for row in csv.reader(f): mem.append(row)
 
     oup, mem = CGRA( ker, mem, inp, oup ).run(pr, limit)
 
-    with open( kernel + "/"+FILENAME_MEM_O+EXT, 'w+') as f:
+    with open( kernel + "/"+FILENAME_MEM_O+version+EXT, 'w+') as f:
         for row in mem: csv.writer(f).writerow(row)
-    with open( kernel + "/"+FILENAME_OUP+EXT, 'w+') as f:
+    with open( kernel + "/"+FILENAME_OUP+version+EXT, 'w+') as f:
         for row in oup: csv.writer(f).writerow(row)
 
     print("\n\nEND")
