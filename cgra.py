@@ -126,15 +126,15 @@ class CGRA:
         n_r, n_c = self.get_neighbour_address( r, c, dir )
         return self.cells[n_r][n_c].get_flag( flag )
 
-    def load_direct( self, c ):
+    def load_direct( self, c, incr ):
         ret = self.inputs[  self.load_idx[c]][ c ]
-        self.load_idx[c] += 1
+        self.load_idx[c] += incr
         return int(ret)
 
-    def store_direct( self, c, val ):
+    def store_direct( self, c, val incr ):
         if self.store_idx[c] >= len(self.outputs): self.outputs.append([0]*N_COLS)
         self.outputs[ self.store_idx[c] ][c] = val
-        self.store_idx[c] += 1
+        self.store_idx[c] += incr
 
     def load_indirect( self, add ):
         for row in self.memory[1:]:
@@ -235,13 +235,15 @@ class PE:
 
         elif self.op in self.ops_lwd:
             des = instr[1]
-            ret = self.parent.load_direct( self.col )
+            incr = instr[2]
+            ret = self.parent.load_direct( self.col, incr )
             if des in self.regs: self.regs[des] = ret
             self.out = ret
 
         elif self.op in self.ops_swd:
             val = self.fetch_val( instr[1] )
-            self.parent.store_direct( self.col, val )
+            incr = instr[2]
+            self.parent.store_direct( self.col, val, incr )
 
         elif self.op in self.ops_lwi:
             des = instr[1]
