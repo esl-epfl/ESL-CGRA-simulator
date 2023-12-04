@@ -59,7 +59,7 @@ def print_out( prs, outs, insts, ops, reg ):
 
 
 class CGRA:
-    def __init__( self, kernel, memory,):
+    def __init__( self, kernel, memory, read_addrs, write_addrs):
         self.cells = []
         for r in range(N_ROWS):
             list = []
@@ -70,8 +70,14 @@ class CGRA:
         self.memory     = memory
         self.instr2exec = 0
         self.cycles     = 0
-        self.load_addr   = [0]*N_COLS
-        self.store_addr  = [0]*N_COLS
+        if read_addrs is not None and len(read_addrs) == N_COLS: 
+            self.load_addr = read_addrs
+        else:   
+            self.load_addr = [0]*N_COLS
+        if write_addrs is not None and len(write_addrs) == N_COLS: 
+            self.store_addr = read_addrs
+        else:   
+            self.store_addr = [0]*N_COLS
         self.exit       = False
 
     def run( self, pr, limit ):
@@ -364,7 +370,7 @@ class PE:
     ops_jump    = { 'JUMP'      : '' }
     ops_exit    = { 'EXIT'      : '' }
 
-def run( kernel, version="", pr="ROUT", limit=100 ):
+def run( kernel, version="", pr="ROUT", limit=100, read_addrs=None, write_addrs=None):
     ker = []
     mem = []
 
@@ -373,7 +379,8 @@ def run( kernel, version="", pr="ROUT", limit=100 ):
     with open( kernel + "/"+FILENAME_MEM+EXT, 'r') as f:
         for row in csv.reader(f): mem.append(row)
 
-    mem = CGRA(ker, mem).run(pr, limit)
+    cgra = CGRA(ker, mem, read_addrs, write_addrs)
+    mem = cgra.run(pr, limit)
 
     with open( kernel + "/"+FILENAME_MEM_O+version+EXT, 'w+') as f:
         for row in mem: csv.writer(f).writerow(row)
