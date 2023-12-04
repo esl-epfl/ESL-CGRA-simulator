@@ -75,7 +75,7 @@ class CGRA:
         else:   
             self.load_addr = [0]*N_COLS
         if write_addrs is not None and len(write_addrs) == N_COLS: 
-            self.store_addr = read_addrs
+            self.store_addr = write_addrs
         else:   
             self.store_addr = [0]*N_COLS
         self.exit       = False
@@ -135,7 +135,7 @@ class CGRA:
         for row in self.memory[1:]:
             if int(row[0]) == self.load_addr[c]:
                 ret = int(row[1])
-        self.load_addr += incr
+        self.load_addr[c] += incr
         return ret
 
     def store_direct( self, c, val, incr ):
@@ -146,7 +146,7 @@ class CGRA:
                 replaced = True
         if not replaced:
             self.memory.append([self.store_addr[c], val])
-        self.store_addr += incr
+        self.store_addr[c] += incr
         return
 
     def load_indirect( self, addr ):
@@ -370,16 +370,16 @@ class PE:
     ops_jump    = { 'JUMP'      : '' }
     ops_exit    = { 'EXIT'      : '' }
 
-def run( kernel, version="", pr="ROUT", limit=100, read_addrs=None, write_addrs=None):
+def run( kernel, version="", pr="ROUT", limit=100, load_addrs=None, store_addrs=None):
     ker = []
     mem = []
 
     with open( kernel + "/"+FILENAME_INSTR+version+EXT, 'r') as f:
         for row in csv.reader(f): ker.append(row)
-    with open( kernel + "/"+FILENAME_MEM+EXT, 'r') as f:
+    with open( kernel + "/"+FILENAME_MEM+version+EXT, 'r') as f:
         for row in csv.reader(f): mem.append(row)
 
-    cgra = CGRA(ker, mem, read_addrs, write_addrs)
+    cgra = CGRA(ker, mem, load_addrs, store_addrs)
     mem = cgra.run(pr, limit)
 
     with open( kernel + "/"+FILENAME_MEM_O+version+EXT, 'w+') as f:
