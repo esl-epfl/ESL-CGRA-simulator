@@ -59,7 +59,7 @@ def print_out( prs, outs, insts, ops, reg ):
 
 
 class CGRA:
-    def __init__( self, kernel, memory, inputs, outputs ):
+    def __init__( self, kernel, memory,):
         self.cells = []
         for r in range(N_ROWS):
             list = []
@@ -68,8 +68,6 @@ class CGRA:
             self.cells.append(list)
         self.instrs     = ker_parse( kernel )
         self.memory     = memory
-        self.inputs     = inputs
-        self.outputs    = outputs
         self.instr2exec = 0
         self.cycles     = 0
         self.load_addr   = [0]*N_COLS
@@ -85,7 +83,7 @@ class CGRA:
                 print("EXECUTION LIMIT REACHED (",limit,"steps)")
                 print("Extend the execution by calling the run with argument limit=<steps>.")
                 break
-        return self.outputs, self.memory
+        return self.memory
 
     def step( self, prs="ROUT" ):
         for r in range(N_ROWS):
@@ -368,23 +366,17 @@ class PE:
 
 def run( kernel, version="", pr="ROUT", limit=100 ):
     ker = []
-    inp = []
-    oup = []
     mem = []
 
     with open( kernel + "/"+FILENAME_INSTR+version+EXT, 'r') as f:
         for row in csv.reader(f): ker.append(row)
-    with open( kernel + "/"+FILENAME_INP+EXT, 'r') as f:
-        for row in csv.reader(f): inp.append(row)
     with open( kernel + "/"+FILENAME_MEM+EXT, 'r') as f:
         for row in csv.reader(f): mem.append(row)
 
-    oup, mem = CGRA( ker, mem, inp, oup ).run(pr, limit)
+    mem = CGRA(ker, mem).run(pr, limit)
 
     with open( kernel + "/"+FILENAME_MEM_O+EXT, 'w+') as f:
         for row in mem: csv.writer(f).writerow(row)
-    with open( kernel + "/"+FILENAME_OUP+EXT, 'w+') as f:
-        for row in oup: csv.writer(f).writerow(row)
 
     print("\n\nEND")
 
