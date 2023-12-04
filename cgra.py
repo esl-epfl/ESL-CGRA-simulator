@@ -72,8 +72,8 @@ class CGRA:
         self.outputs    = outputs
         self.instr2exec = 0
         self.cycles     = 0
-        self.load_idx   = [0]*N_COLS
-        self.store_idx  = [0]*N_COLS
+        self.load_addr   = [0]*N_COLS
+        self.store_addr  = [0]*N_COLS
         self.exit       = False
 
     def run( self, pr, limit ):
@@ -126,28 +126,37 @@ class CGRA:
         n_r, n_c = self.get_neighbour_address( r, c, dir )
         return self.cells[n_r][n_c].get_flag( flag )
 
-    def load_direct( self, c ):
-        ret = self.inputs[  self.load_idx[c]][ c ]
-        self.load_idx[c] += 1
-        return int(ret)
-
-    def store_direct( self, c, val ):
-        if self.store_idx[c] >= len(self.outputs): self.outputs.append([0]*N_COLS)
-        self.outputs[ self.store_idx[c] ][c] = val
-        self.store_idx[c] += 1
-
-    def load_indirect( self, add ):
+    def load_direct(self, c, incr):
+        ret = -1
         for row in self.memory[1:]:
-            if int(row[0]) == add:
+            if int(row[0]) == self.load_addr[c]:
+                ret = int(row[1])
+        self.load_addr += incr
+        return ret
+
+    def store_direct( self, c, val, incr ):
+        replaced = False
+        for i in range(1,len(self.memory)):
+            if int(self.memory[i][0]) == self.store_addr[c]:
+                self.memory[i][1] = val
+                replaced = True
+        if not replaced:
+            self.memory.append([self.store_addr[c], val])
+        self.store_addr += incr
+        return
+
+    def load_indirect( self, addr ):
+        for row in self.memory[1:]:
+            if int(row[0]) == addr:
                 return int(row[1])
         return -1
 
-    def store_indirect( self, add, val):
+    def store_indirect( self, addr, val):
         for i in range(1,len(self.memory)):
-            if int(self.memory[i][0]) == add:
+            if int(self.memory[i][0]) == addr:
                 self.memory[i][1] = val
                 return
-        self.memory.append([add, val])
+        self.memory.append([addr, val])
         return
 
 class PE:
@@ -235,25 +244,25 @@ class PE:
 
         elif self.op in self.ops_lwd:
             des = instr[1]
-            ret = self.parent.load_direct( self.col )
+            ret = self.parent.load_direct( self.col, 4 )
             if des in self.regs: self.regs[des] = ret
             self.out = ret
 
         elif self.op in self.ops_swd:
             val = self.fetch_val( instr[1] )
-            self.parent.store_direct( self.col, val )
+            self.parent.store_direct( self.col, val, 4 )
 
         elif self.op in self.ops_lwi:
             des = instr[1]
-            add = self.fetch_val( instr[2] )
-            ret = self.parent.load_indirect(add)
+            addr = self.fetch_val( instr[2] )
+            ret = self.parent.load_indirect(addr)
             if des in self.regs: self.regs[des] = ret
             self.out = ret
 
         elif self.op in self.ops_swi:
-            add = self.fetch_val( instr[1] )
+            addr = self.fetch_val( instr[1] )
             val = self.fetch_val( instr[2] )
-            self.parent.store_indirect( add, val )
+            self.parent.store_indirect( addr, val )
             pass
 
         elif self.op in self.ops_nop:
