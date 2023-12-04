@@ -59,7 +59,7 @@ def print_out( prs, outs, insts, ops, reg ):
 
 
 class CGRA:
-    def __init__( self, kernel, memory, inputs, outputs ):
+    def __init__( self, kernel, memory, read_addrs, write_addrs):
         self.cells = []
         for r in range(N_ROWS):
             list = []
@@ -68,12 +68,16 @@ class CGRA:
             self.cells.append(list)
         self.instrs     = ker_parse( kernel )
         self.memory     = memory
-        self.inputs     = inputs
-        self.outputs    = outputs
         self.instr2exec = 0
         self.cycles     = 0
-        self.load_idx   = [0]*N_COLS
-        self.store_idx  = [0]*N_COLS
+        if read_addrs is not None and len(read_addrs) == N_COLS: 
+            self.load_addr = read_addrs
+        else:   
+            self.load_addr = [0]*N_COLS
+        if write_addrs is not None and len(write_addrs) == N_COLS: 
+            self.store_addr = write_addrs
+        else:   
+            self.store_addr = [0]*N_COLS
         self.exit       = False
 
     def run( self, pr, limit ):
@@ -85,7 +89,7 @@ class CGRA:
                 print("EXECUTION LIMIT REACHED (",limit,"steps)")
                 print("Extend the execution by calling the run with argument limit=<steps>.")
                 break
-        return self.outputs, self.memory
+        return self.memory
 
     def step( self, prs="ROUT" ):
         for r in range(N_ROWS):
@@ -126,6 +130,7 @@ class CGRA:
         n_r, n_c = self.get_neighbour_address( r, c, dir )
         return self.cells[n_r][n_c].get_flag( flag )
 
+<<<<<<< HEAD
     def load_direct( self, c, incr ):
         ret = self.inputs[  self.load_idx[c]][ c ]
         self.load_idx[c] += incr
@@ -135,19 +140,39 @@ class CGRA:
         if self.store_idx[c] >= len(self.outputs): self.outputs.append([0]*N_COLS)
         self.outputs[ self.store_idx[c] ][c] = val
         self.store_idx[c] += incr
-
-    def load_indirect( self, add ):
+=======
+    def load_direct(self, c, incr):
+        ret = -1
         for row in self.memory[1:]:
-            if int(row[0]) == add:
+            if int(row[0]) == self.load_addr[c]:
+                ret = int(row[1])
+        self.load_addr[c] += incr
+        return ret
+
+    def store_direct( self, c, val, incr ):
+        replaced = False
+        for i in range(1,len(self.memory)):
+            if int(self.memory[i][0]) == self.store_addr[c]:
+                self.memory[i][1] = val
+                replaced = True
+        if not replaced:
+            self.memory.append([self.store_addr[c], val])
+        self.store_addr[c] += incr
+        return
+>>>>>>> inout-memory
+
+    def load_indirect( self, addr ):
+        for row in self.memory[1:]:
+            if int(row[0]) == addr:
                 return int(row[1])
         return -1
 
-    def store_indirect( self, add, val):
+    def store_indirect( self, addr, val):
         for i in range(1,len(self.memory)):
-            if int(self.memory[i][0]) == add:
+            if int(self.memory[i][0]) == addr:
                 self.memory[i][1] = val
                 return
-        self.memory.append([add, val])
+        self.memory.append([addr, val])
         return
 
 class PE:
@@ -235,27 +260,35 @@ class PE:
 
         elif self.op in self.ops_lwd:
             des = instr[1]
+<<<<<<< HEAD
             incr = self.fetch_val(instr[2])
             ret = self.parent.load_direct( self.col, incr )
+=======
+            ret = self.parent.load_direct( self.col, 4 )
+>>>>>>> inout-memory
             if des in self.regs: self.regs[des] = ret
             self.out = ret
 
         elif self.op in self.ops_swd:
             val = self.fetch_val( instr[1] )
+<<<<<<< HEAD
             incr = self.fetch_val(instr[2])
             self.parent.store_direct( self.col, val, incr )
+=======
+            self.parent.store_direct( self.col, val, 4 )
+>>>>>>> inout-memory
 
         elif self.op in self.ops_lwi:
             des = instr[1]
-            add = self.fetch_val( instr[2] )
-            ret = self.parent.load_indirect(add)
+            addr = self.fetch_val( instr[2] )
+            ret = self.parent.load_indirect(addr)
             if des in self.regs: self.regs[des] = ret
             self.out = ret
 
         elif self.op in self.ops_swi:
-            add = self.fetch_val( instr[1] )
+            addr = self.fetch_val( instr[1] )
             val = self.fetch_val( instr[2] )
-            self.parent.store_indirect( add, val )
+            self.parent.store_indirect( addr, val )
             pass
 
         elif self.op in self.ops_nop:
@@ -359,25 +392,20 @@ class PE:
     ops_jump    = { 'JUMP'      : '' }
     ops_exit    = { 'EXIT'      : '' }
 
-def run( kernel, version="", pr="ROUT", limit=100 ):
+def run( kernel, version="", pr="ROUT", limit=100, load_addrs=None, store_addrs=None):
     ker = []
-    inp = []
-    oup = []
     mem = []
 
     with open( kernel + "/"+FILENAME_INSTR+version+EXT, 'r') as f:
         for row in csv.reader(f): ker.append(row)
-    with open( kernel + "/"+FILENAME_INP+version+EXT, 'r') as f:
-        for row in csv.reader(f): inp.append(row)
     with open( kernel + "/"+FILENAME_MEM+version+EXT, 'r') as f:
         for row in csv.reader(f): mem.append(row)
 
-    oup, mem = CGRA( ker, mem, inp, oup ).run(pr, limit)
+    cgra = CGRA(ker, mem, load_addrs, store_addrs)
+    mem = cgra.run(pr, limit)
 
     with open( kernel + "/"+FILENAME_MEM_O+version+EXT, 'w+') as f:
         for row in mem: csv.writer(f).writerow(row)
-    with open( kernel + "/"+FILENAME_OUP+version+EXT, 'w+') as f:
-        for row in oup: csv.writer(f).writerow(row)
 
     print("\n\nEND")
 

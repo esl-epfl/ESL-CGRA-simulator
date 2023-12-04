@@ -25,15 +25,15 @@ def kernel_new( name, dim=4 ):
     print("Kernel", name, "created successfuly!")
 
 
-def kernel_clear_memory( name ):
+def kernel_clear_memory( name, version=""):
     import csv
     filedir     = "./"+name+"/"
-    with open(filedir + FILENAME_MEM + EXT,"w+",  newline='') as f:
+    with open(filedir + FILENAME_MEM + version + EXT,"w+",  newline='') as f:
         csv.writer(f).writerow(["Address", "Data"])
         csv.writer(f).writerow(["0", "0"])
 
 
-def kernel_add_memory_region( name, start, vals ):
+def kernel_add_memory_region( name, start, vals, version=""):
     import csv
     mem     = []
     region  = []
@@ -42,12 +42,12 @@ def kernel_add_memory_region( name, start, vals ):
         region.append([ start + i*WORD_SIZE,vals[i]])
 
     try:
-        with open(filedir + FILENAME_MEM + EXT) as f:
+        with open(filedir + FILENAME_MEM + version + EXT) as f:
             for row in csv.reader(f): mem.append(row)
 
         for row in region: mem.append(row)
 
-        with open(filedir + FILENAME_MEM + EXT,"w", newline='') as f:
+        with open(filedir + FILENAME_MEM + version + EXT,"w", newline='') as f:
             for row in mem: csv.writer(f).writerow(row)
     except:
         print("Could not open memory file")
