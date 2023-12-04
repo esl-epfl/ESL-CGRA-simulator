@@ -16,8 +16,8 @@ PRINT_OUTS  = 1
 MAX_32b = 0xFFFFFFFF
 
 
-srcs    = ['ZERO', 'SELF', 'RCL', 'RCR', 'RCT', 'RCB',  'R0', 'R1', 'R2', 'R3', 'IMM']
-dsts    = ['SELF', 'RCL', 'RCR', 'RCT', 'RCB','R0', 'R1', 'R2', 'R3']
+srcs    = ['ZERO', 'SELF', 'RCL', 'RCR', 'RCT', 'RCB', 'R0', 'R1', 'R2', 'R3', 'IMM']
+dsts    = ['SELF', 'RCL', 'RCR', 'RCT', 'RCB', 'R0', 'R1', 'R2', 'R3']
 regs    = dsts[-4:]
 
 class INSTR:
@@ -130,17 +130,6 @@ class CGRA:
         n_r, n_c = self.get_neighbour_address( r, c, dir )
         return self.cells[n_r][n_c].get_flag( flag )
 
-<<<<<<< HEAD
-    def load_direct( self, c, incr ):
-        ret = self.inputs[  self.load_idx[c]][ c ]
-        self.load_idx[c] += incr
-        return int(ret)
-
-    def store_direct( self, c, val, incr ):
-        if self.store_idx[c] >= len(self.outputs): self.outputs.append([0]*N_COLS)
-        self.outputs[ self.store_idx[c] ][c] = val
-        self.store_idx[c] += incr
-=======
     def load_direct(self, c, incr):
         ret = -1
         for row in self.memory[1:]:
@@ -159,7 +148,6 @@ class CGRA:
             self.memory.append([self.store_addr[c], val])
         self.store_addr[c] += incr
         return
->>>>>>> inout-memory
 
     def load_indirect( self, addr ):
         for row in self.memory[1:]:
@@ -260,23 +248,17 @@ class PE:
 
         elif self.op in self.ops_lwd:
             des = instr[1]
-<<<<<<< HEAD
+            ret = self.parent.load_direct( self.col, 4 )
             incr = self.fetch_val(instr[2])
             ret = self.parent.load_direct( self.col, incr )
-=======
-            ret = self.parent.load_direct( self.col, 4 )
->>>>>>> inout-memory
             if des in self.regs: self.regs[des] = ret
             self.out = ret
 
         elif self.op in self.ops_swd:
             val = self.fetch_val( instr[1] )
-<<<<<<< HEAD
+            self.parent.store_direct( self.col, val, 4 )
             incr = self.fetch_val(instr[2])
             self.parent.store_direct( self.col, val, incr )
-=======
-            self.parent.store_direct( self.col, val, 4 )
->>>>>>> inout-memory
 
         elif self.op in self.ops_lwi:
             des = instr[1]
