@@ -17,7 +17,7 @@ Each kernel has a folder with its name. All the files needed to run a simulation
 * A `memory.csv` file including the indexed values that the kernel can access indirectly (through a memory address).
 * A `instructions.csv` file containing a matrix of operations to be executed by each Processing Element (PE) during each instruction. This file can be automatically generated from a `.out` file or hand-written assembly.
 You may have more than one version of a this file (all named `instructions<version>.csv` (replacing `<version>` with any string), but they must use the same environment (inputs and memory).
-* A `outputs.csv` and `memory_out.csv` files that are generated after every run of the simulator. These files are overriden (even for different versions of the same kerel), so save them somewhere else if you want to keep track of them.
+* A `outputs.csv` and `memory_out.csv` files that are generated after every run of the simulator. These files are overriden (even for different versions of the same kernel), so save them somewhere else if you want to keep track of them.
 
 
 ### Notebook
@@ -54,7 +54,7 @@ If the address is not found, `-1` is returned (simulating a flash read from an e
 
 When storing information, the kernel will look for the address specified and write in the corresponding data space the value given. If the address is not found, a new line is created containing it.
 
-When using the `kernel_add_memory` function, overlaps are not considered (i.e. a same memory address might appear more than once in the table, but only the first one will be considered by the simulator -as it will always be found first). Be careful.
+When using the `kernel_add_memory` function, overlaps are not considered (i.e. a same memory address might appear more than once in the table, but only the first one will be considered by the simulator -as it will always be found first). Be careful. In addition, the default data size is 32 bits, so that consecutive elements will be in memory addresses with a difference of 4.
 
 ### Inputs
 
