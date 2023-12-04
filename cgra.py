@@ -375,7 +375,7 @@ def run( kernel, version="", pr="ROUT", limit=100 ):
 
     mem = CGRA(ker, mem).run(pr, limit)
 
-    with open( kernel + "/"+FILENAME_MEM_O+EXT, 'w+') as f:
+    with open( kernel + "/"+FILENAME_MEM_O+version+EXT, 'w+') as f:
         for row in mem: csv.writer(f).writerow(row)
 
     print("\n\nEND")
