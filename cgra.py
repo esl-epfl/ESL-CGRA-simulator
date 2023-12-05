@@ -135,6 +135,7 @@ class CGRA:
         for row in self.memory[1:]:
             if int(row[0]) == self.load_addr[c]:
                 ret = int(row[1])
+                break
         self.load_addr[c] += incr
         return ret
 
@@ -144,6 +145,7 @@ class CGRA:
             if int(self.memory[i][0]) == self.store_addr[c]:
                 self.memory[i][1] = val
                 replaced = True
+                break
         if not replaced:
             self.memory.append([self.store_addr[c], val])
         self.store_addr[c] += incr
@@ -374,14 +376,22 @@ def run( kernel, version="", pr="ROUT", limit=100, load_addrs=None, store_addrs=
     ker = []
     mem = []
 
+    # Open the instructions file
     with open( kernel + "/"+FILENAME_INSTR+version+EXT, 'r') as f:
         for row in csv.reader(f): ker.append(row)
-    with open( kernel + "/"+FILENAME_MEM+version+EXT, 'r') as f:
-        for row in csv.reader(f): mem.append(row)
+    
+    # Open or create an empty memory file
+    try:
+        with open( kernel + "/"+FILENAME_MEM+version+EXT, 'r') as f:
+            for row in csv.reader(f): mem.append(row)
+    except IOError:
+        kernel_clear_memory(kernel, version)
 
+    # Run the kernel
     cgra = CGRA(ker, mem, load_addrs, store_addrs)
     mem = cgra.run(pr, limit)
 
+    # Store the output
     with open( kernel + "/"+FILENAME_MEM_O+version+EXT, 'w+') as f:
         for row in mem: csv.writer(f).writerow(row)
 
