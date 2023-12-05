@@ -1,6 +1,7 @@
 import numpy as np
 from ctypes import c_int32
 import csv
+import os.path
 
 from kernels import *
 
@@ -132,17 +133,17 @@ class CGRA:
 
     def load_direct(self, c, incr):
         ret = -1
-        for row in self.memory[1:]:
-            if int(row[0]) == self.load_addr[c]:
-                ret = int(row[1])
+        for row in self.memory:
+            if row[0] == self.load_addr[c]:
+                ret = row[1]
                 break
         self.load_addr[c] += incr
         return ret
 
     def store_direct( self, c, val, incr ):
         replaced = False
-        for i in range(1,len(self.memory)):
-            if int(self.memory[i][0]) == self.store_addr[c]:
+        for i in range(0,len(self.memory)):
+            if self.memory[i][0] == self.store_addr[c]:
                 self.memory[i][1] = val
                 replaced = True
                 break
@@ -152,14 +153,14 @@ class CGRA:
         return
 
     def load_indirect( self, addr ):
-        for row in self.memory[1:]:
-            if int(row[0]) == addr:
-                return int(row[1])
+        for row in self.memory:
+            if row[0] == addr:
+                return row[1]
         return -1
 
     def store_indirect( self, addr, val):
-        for i in range(1,len(self.memory)):
-            if int(self.memory[i][0]) == addr:
+        for i in range(0,len(self.memory)):
+            if self.memory[i][0] == addr:
                 self.memory[i][1] = val
                 return
         self.memory.append([addr, val])
@@ -380,20 +381,30 @@ def run( kernel, version="", pr="ROUT", limit=100, load_addrs=None, store_addrs=
     with open( kernel + "/"+FILENAME_INSTR+version+EXT, 'r') as f:
         for row in csv.reader(f): ker.append(row)
     
-    # Open or create an empty memory file
-    try:
-        with open( kernel + "/"+FILENAME_MEM+version+EXT, 'r') as f:
-            for row in csv.reader(f): mem.append(row)
-    except IOError:
+   # Create an empty memory file if there is not any
+    if not os.path.isfile(kernel + "/"+FILENAME_MEM+version+EXT):
         kernel_clear_memory(kernel, version)
+
+    # Read the memory file
+    with open( kernel + "/"+FILENAME_MEM+version+EXT, 'r') as f:
+        csv_reader = csv.reader(f, delimiter=',')
+        # Skip the first row (header)
+        next(csv_reader, None)
+        for row in csv_reader:
+            try:
+                mem.append([int(row[0]), int(row[1])])
+            except ValueError:
+                print("Error: Values in CSV file are not integers.")
+                return None
 
     # Run the kernel
     cgra = CGRA(ker, mem, load_addrs, store_addrs)
     mem = cgra.run(pr, limit)
 
-    # Store the output
+    # Store the output sorted
+    sorted_mem = sorted(mem, key=lambda x: x[0])
     with open( kernel + "/"+FILENAME_MEM_O+version+EXT, 'w+') as f:
-        for row in mem: csv.writer(f).writerow(row)
+        for row in sorted_mem: csv.writer(f).writerow(row)
 
     print("\n\nEND")
 
