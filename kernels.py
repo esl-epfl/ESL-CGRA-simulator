@@ -30,7 +30,6 @@ def kernel_clear_memory( name, version=""):
     filedir     = "./"+name+"/"
     with open(filedir + FILENAME_MEM + version + EXT,"w+",  newline='') as f:
         csv.writer(f).writerow(["Address", "Data"])
-        csv.writer(f).writerow(["0", "0"])
 
 
 def kernel_add_memory_region( name, start, vals, version=""):
