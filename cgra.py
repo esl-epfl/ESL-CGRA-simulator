@@ -267,8 +267,8 @@ class PE:
             self.out = ret
 
         elif self.op in self.ops_swi:
-            addr = self.fetch_val( instr[1] )
-            val = self.fetch_val( instr[2] )
+            addr = self.fetch_val( instr[2] )
+            val = self.fetch_val( instr[1] )
             self.parent.store_indirect( addr, val )
             pass
 
