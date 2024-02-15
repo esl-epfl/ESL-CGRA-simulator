@@ -1,0 +1,484 @@
+<% 
+## loading weight 
+count = 0
+
+%>
+
+% if H_filter*W_filter == 9:
+T = ${count}
+% for i in range(numb_PE):
+% if 0<=i<4: 
+% if i == 3:
+LWD ROUT
+% else:
+LWD R0
+% endif
+% elif 4<=i<12:
+% if (i%4) == 3:
+NOP
+% elif (i%4) != 3:
+LWD R0
+% endif
+% else:
+NOP
+% endif
+% endfor
+% endif
+
+<% 
+## loading input 
+count= count +1
+%>
+
+
+T=${count}
+% for i in range(numb_PE):
+% if 0<=i<12:
+% if (i%4) == 3:
+NOP
+% else:
+LWD R1
+% endif
+% else:
+NOP
+% endif
+% endfor
+
+<%
+## mult inputs and weights
+## decr index
+count = count +1
+%>
+
+
+T=${count}
+% for i in range(numb_PE):
+% if 0<=i<4: 
+% if i == 3:
+SSUB ROUT, ROUT, 1
+% else: 
+SMUL ROUT, R1, R0
+% endif
+% elif 4<=i<12:
+% if (i%4) == 3:
+NOP
+% else:
+SMUL ROUT, R1, R0
+% endif
+% else:
+NOP
+% endif
+% endfor
+
+<%
+## save inputs-row 1 and 2
+## add PS-row 2 and 3
+## copy PS-row 1 in row 4
+count = count +1
+%>
+
+
+T=${count}
+% for i in range(numb_PE):
+% if 0<=i<7:
+% if (i%4)==3:
+BEQ ROUT, 0, 9
+% else:
+SADD ROUT,R1,0
+% endif
+% elif 7<=i<12:
+% if (i%4)==3:
+NOP
+% else:
+SADD ROUT, ROUT, RCT
+% endif
+% else:
+% if (i%4)==3:
+NOP
+% else:
+SADD ROUT, 0, RCB
+% endif
+% endif
+% endfor
+
+<%
+## load row 1
+## load row 2 and 3 from ROUT of (i-1) row
+## sum the PS row-3 4
+count = count +1
+%>
+T=${count}
+% for i in range(numb_PE):
+% if 0<=i<4:
+% if (i%4) == 3:
+NOP
+% else:
+LWD R1
+% endif
+% elif 4<=i<12:
+% if (i%4) == 3:
+NOP
+% else:
+SADD R1, RCT, 0
+% endif
+% else:
+% if (i%4) == 3:
+NOP
+% else:
+SADD ROUT, ROUT, RCT
+% endif
+% endif
+% endfor
+
+<%
+## mult inp and weight
+## decr cycle -1 
+## sum ps-41+42 and move ps-43-->ps-44
+count = count + 1
+%>
+
+T=${count}
+% for i in range(numb_PE):
+% if 0<=i<4: 
+% if i == 3:
+SSUB ROUT, ROUT, 1
+% else: 
+SMUL ROUT, R1, R0
+% endif
+% elif 4<=i<12:
+% if (i%4) == 3:
+NOP
+% else:
+SMUL ROUT, R1, R0
+% endif
+% else:
+% if (i%4) == 0:
+SADD ROUT, ROUT, RCR
+% elif (i%4)== 3:
+SADD ROUT, RCL, 0
+% else:
+NOP
+% endif
+% endif
+% endfor
+
+<%
+## save inputs-row 1 and 2
+## add PS-row 2 and 3
+## copy PS-row 1 in row 4
+## branch if cycle finished
+count = count +1
+%>
+T=${count}
+% for i in range(numb_PE):
+% if 0<=i<7:
+% if (i%4)==3:
+BEQ ROUT, 0, 10
+% else:
+SADD ROUT,R1,0
+% endif
+% elif 7<=i<12:
+% if (i%4)==3:
+NOP
+% else:
+SADD ROUT, ROUT, RCT
+% endif
+% else:
+% if (i%4)==3:
+SADD ROUT, ROUT, RCR
+% else:
+SADD ROUT, 0, RCB
+% endif
+% endif
+% endfor
+
+
+
+<%
+count = count +1
+## load row 1
+## load row 2 and 3 from ROUT of (i-1) row
+## sum the PS row-3 4
+%>
+T=${count}
+% for i in range(numb_PE):
+% if 0<=i<4:
+% if (i%4) == 3:
+NOP
+% else:
+LWD R1
+% endif
+% elif 4<=i<12:
+% if (i%4) == 3:
+NOP
+% else:
+SADD R1, RCT, 0
+% endif
+% else:
+% if (i%4) == 3:
+SWD ROUT
+% else:
+SADD ROUT, ROUT, RCT
+% endif
+% endif
+% endfor
+
+
+<%
+## mult inp and weight
+## decr cycle -1 
+## sum ps-41+42 and move ps-43-->ps-44
+count = count + 1
+%>
+
+T=${count}
+% for i in range(numb_PE):
+% if 0<=i<4: 
+% if i == 3:
+SSUB ROUT, ROUT, 1
+% else: 
+SMUL ROUT, R1, R0
+% endif
+% elif 4<=i<12:
+% if (i%4) == 3:
+NOP
+% else:
+SMUL ROUT, R1, R0
+% endif
+% else:
+% if (i%4) == 0:
+SADD ROUT, ROUT, RCR
+% elif (i%4)== 3:
+SADD ROUT, RCL, 0
+% else:
+NOP
+% endif
+% endif
+% endfor
+
+
+<%
+## save inputs-row 1 and 2
+## add PS-row 2 and 3
+## copy PS-row 1 in row 4
+## branch if cycle finished
+count = count +1
+%>
+T=${count}
+% for i in range(numb_PE):
+% if 0<=i<7:
+% if (i%4)==3:
+BNE ROUT, ROUT, 7
+% else:
+SADD ROUT,R1,0
+% endif
+% elif 7<=i<12:
+% if (i%4)==3:
+NOP
+% else:
+SADD ROUT, ROUT, RCT
+% endif
+% else:
+% if (i%4)==3:
+SADD ROUT, ROUT, RCR
+% else:
+SADD ROUT, 0, RCB
+% endif
+% endif
+% endfor
+
+
+<%
+## final instructions
+count = count +1
+%>
+T=${count}
+% for i in range(numb_PE):
+% if 0<=i<12:
+NOP
+% else:
+% if (i%4) == 3:
+SWD ROUT
+% else:
+SADD ROUT, ROUT, RCT
+% endif
+% endif
+% endfor
+
+<%
+## final instructions
+count = count +1
+%>
+T=${count}
+% for i in range(numb_PE):
+% if 0<=i<12:
+NOP
+% else:
+% if (i%4) == 0:
+SADD ROUT, ROUT, RCR
+% elif (i%4)== 3:
+SADD ROUT, RCL, 0
+% else:
+NOP
+% endif
+% endif
+% endfor
+
+<%
+## final instructions
+count = count +1
+%>
+T=${count}
+% for i in range(numb_PE):
+% if i == 15:
+SADD ROUT, ROUT, RCR
+% else:
+NOP
+% endif
+% endfor
+
+<%
+## final instructions
+count = count +1
+%>
+T=${count}
+% for i in range(numb_PE):
+% if i == 0:
+EXIT
+% elif i == 15:
+SWD ROUT
+% else:
+NOP
+% endif
+% endfor
+
+
+
+
+
+T = ${count}
+% for i in range(numb_PE):
+% if 0<=i<4: 
+% if i == 3:
+LWD ROUT
+% else:
+LWD R0
+% endif
+% elif 4<=i<12:
+% if (i%4) == 3:
+NOP
+% elif (i%4) != 3:
+LWD R0
+% endif
+% else:
+NOP
+% endif
+% endfor
+
+
+
+
+
+% for j in range(3):
+
+
+T=${count}
+% for i in range(numb_PE):
+% if (j > 0):
+% if 0<=i<4:
+% if (i%4) == 3:
+NOP
+% else:
+LWD R1
+% endif
+% elif 4<=i<12:
+% if (i%4) == 3:
+NOP
+% else:
+SADD R1, RCT, 0
+% endif
+% else:
+% if (i%4) == 3:
+% if j == 1:
+NOP
+% elif j == 2:
+SWD ROUT
+% endif
+% else:
+SADD ROUT, ROUT, RCT
+% endif
+% endif
+% endfor
+% else:
+% if 0<=i<12:
+% if (i%4) == 3:
+NOP
+% else:
+LWD R1
+% endif
+% else:
+NOP
+% endif
+
+
+
+T=${count}
+% for i in range(numb_PE):
+% if 0<=i<4: 
+% if i == 3:
+SSUB ROUT, ROUT, 1
+% else: 
+SMUL ROUT, R1, R0
+% endif
+% elif 4<=i<12:
+% if (i%4) == 3:
+NOP
+% else:
+SMUL ROUT, R1, R0
+% endif
+% else:
+% if j > 0:
+% if (i%4) == 0:
+SADD ROUT, ROUT, RCR
+% elif (i%4)== 3:
+SADD ROUT, RCL, 0
+% else:
+NOP
+% endif
+% else:
+NOP
+% endif
+% endif
+% endfor
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+% endfor
+

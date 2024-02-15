@@ -1,0 +1,184 @@
+<% ## loading weight 
+count = 0
+%>
+% if H_filter*W_filter == 9:
+T = ${count}
+% for i in range(numb_PE):
+% if 0<=i<4: 
+% if i == 3:
+LWD R3
+% else:
+LWD R0
+% endif
+% elif 4<=i<12:
+% if (i%4) == 3:
+NOP
+% elif (i%4) != 3:
+LWD R0
+% endif
+% else:
+NOP
+% endif
+% endfor
+% endif
+% for j in range(3):
+T = ${3*j+1}
+% if j > 0:
+% for i in range(numb_PE):
+% if 0<=i<4:
+% if (i%4) == 3:
+NOP
+% else:
+LWD R1
+% endif
+% elif 4<=i<12:
+% if (i%4) == 3:
+NOP
+% else:
+SADD R1, RCT, 0
+% endif
+% else:
+% if (i%4) == 3:
+% if j == 1:
+NOP
+% elif j == 2:
+SWD ROUT
+% endif
+% else:
+SADD ROUT, ROUT, RCT
+% endif
+% endif
+% endfor
+% else:
+% for i in range(numb_PE):
+% if 0<=i<12:
+% if (i%4) == 3:
+NOP
+% else:
+LWD R1
+% endif
+% else:
+NOP
+% endif
+% endfor
+% endif
+T = ${3*j+2}
+% for i in range(numb_PE):
+% if 0<=i<4: 
+% if i == 3:
+SSUB R3, R3, 1
+% else: 
+SMUL ROUT, R1, R0
+% endif
+% elif 4<=i<12:
+% if (i%4) == 3:
+NOP
+% else:
+SMUL ROUT, R1, R0
+% endif
+% else:
+% if j > 0:
+% if (i%4) == 0:
+SADD ROUT, ROUT, RCR
+% elif (i%4)== 3:
+SADD ROUT, RCL, 0
+% else:
+NOP
+% endif
+% else:
+NOP
+% endif
+% endif
+% endfor
+T = ${3*j+3}
+% for i in range(numb_PE):
+% if 0<=i<7:
+% if (i%4)==3:
+% if j < 2:
+BEQ R3, 0, 10
+% else:
+BNE R3, 0, 7
+% endif
+% else:
+SADD ROUT, R1, 0
+% endif
+% elif 7<=i<12:
+% if (i%4)==3:
+NOP
+% else:
+SADD ROUT, ROUT, RCT
+% endif
+% else:
+% if (i%4)==3:
+% if j > 0:
+SADD ROUT, ROUT, RCR
+% else:
+NOP
+% endif
+% else:
+SADD ROUT, 0, RCB
+% endif
+% endif
+% endfor
+% endfor
+<%
+## final instructions
+count = count +1
+%>
+T=${5*j}
+% for i in range(numb_PE):
+% if 0<=i<12:
+NOP
+% else:
+% if (i%4) == 3:
+SWD ROUT
+% else:
+SADD ROUT, ROUT, RCT
+% endif
+% endif
+% endfor
+<%
+## final instructions
+count = count +1
+%>
+T = ${5*j + 1}
+% for i in range(numb_PE):
+% if 0<=i<12:
+NOP
+% else:
+% if (i%4) == 0:
+SADD ROUT, ROUT, RCR
+% elif (i%4)== 3:
+SADD ROUT, RCL, 0
+% else:
+NOP
+% endif
+% endif
+% endfor
+<%
+## final instructions
+count = count +1
+%>
+T = ${5*j + 2}
+% for i in range(numb_PE):
+% if i == 15:
+SADD ROUT, ROUT, RCR
+% else:
+NOP
+% endif
+% endfor
+<%
+## final instructions
+count = count +1
+%>
+T = ${5*j+3}
+% for i in range(numb_PE):
+% if i == 0:
+EXIT
+% elif i == 15:
+SWD ROUT
+% else:
+NOP
+% endif
+% endfor
+
