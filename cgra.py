@@ -17,8 +17,8 @@ PRINT_OUTS  = 1
 MAX_32b = 0xFFFFFFFF
 
 
-srcs    = ['ZERO', 'SELF', 'RCL', 'RCR', 'RCT', 'RCB',  'R0', 'R1', 'R2', 'R3', 'IMM']
-dsts    = ['SELF', 'RCL', 'RCR', 'RCT', 'RCB','R0', 'R1', 'R2', 'R3']
+srcs    = ['ZERO', 'SELF', 'RCL', 'RCR', 'RCT', 'RCB', 'R0', 'R1', 'R2', 'R3', 'IMM']
+dsts    = ['SELF', 'RCL', 'RCR', 'RCT', 'RCB', 'R0', 'R1', 'R2', 'R3']
 regs    = dsts[-4:]
 
 class INSTR:
@@ -252,12 +252,16 @@ class PE:
         elif self.op in self.ops_lwd:
             des = instr[1]
             ret = self.parent.load_direct( self.col, 4 )
+            incr = self.fetch_val(instr[2])
+            ret = self.parent.load_direct( self.col, incr )
             if des in self.regs: self.regs[des] = ret
             self.out = ret
 
         elif self.op in self.ops_swd:
             val = self.fetch_val( instr[1] )
             self.parent.store_direct( self.col, val, 4 )
+            incr = self.fetch_val(instr[2])
+            self.parent.store_direct( self.col, val, incr )
 
         elif self.op in self.ops_lwi:
             des = instr[1]
