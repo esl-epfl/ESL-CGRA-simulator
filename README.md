@@ -58,16 +58,12 @@ If the address is not found, `-1` is returned (simulating a flash read from an e
 
 When storing information, the kernel will look for the address specified and write in the corresponding data space the value given. If the address is not found, a new line is created containing it.
 
-<<<<<<< HEAD
 When using the `kernel_add_memory` function, overlaps are not considered (i.e. a same memory address might appear more than once in the table, but only the first one will be considered by the simulator -as it will always be found first). Be careful. In addition, the default data size is 32 bits, so that consecutive elements will be in memory addresses with a difference of 4.
 
 ### Inputs
 
 The `inputs` file need to be filled manually. Note that there are as many columns as CGRA columns there are. Column 1 of the `inputs` file will be accessed by column 0 of the CGRA, and so on.
 The index increments downwards.
-=======
-When using the `kernel_add_memory_region` function, overlaps are not considered (i.e. a same memory address might appear more than once in the table, but only the first one will be considered by the simulator -as it will always be found first). Be careful.
->>>>>>> a30c90284ee251a0f63a36b2c258eafc28d42457
 
 ### Instructions
 

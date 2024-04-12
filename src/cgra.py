@@ -71,13 +71,13 @@ class CGRA:
         self.memory     = memory
         self.instr2exec = 0
         self.cycles     = 0
-        if read_addrs is not None and len(read_addrs) == N_COLS: 
+        if read_addrs is not None and len(read_addrs) == N_COLS:
             self.load_addr = read_addrs
-        else:   
+        else:
             self.load_addr = [0]*N_COLS
-        if write_addrs is not None and len(write_addrs) == N_COLS: 
+        if write_addrs is not None and len(write_addrs) == N_COLS:
             self.store_addr = write_addrs
-        else:   
+        else:
             self.store_addr = [0]*N_COLS
         self.exit       = False
 
@@ -276,7 +276,9 @@ class PE:
             pass # Intentional
 
         elif self.op in self.ops_jump:
-            self.flags['branch'] = val1
+            val1    = self.fetch_val( instr[1] )
+            val2    = self.fetch_val( instr[2] )
+            self.flags['branch'] = val1 + val2
 
         elif self.op in self.ops_exit:
             self.flags['exit'] = 1
@@ -380,7 +382,7 @@ def run( kernel, version="", pr="ROUT", limit=100, load_addrs=None, store_addrs=
     # Open the instructions file
     with open( kernel + "/"+FILENAME_INSTR+version+EXT, 'r') as f:
         for row in csv.reader(f): ker.append(row)
-    
+
    # Create an empty memory file if there is not any
     if not os.path.isfile(kernel + "/"+FILENAME_MEM+version+EXT):
         kernel_clear_memory(kernel, version)

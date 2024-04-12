@@ -20,7 +20,6 @@ def convert(infile, outfile, version=""):
     conf_set = []
 
     for line in lines:
-
         # Start reading instructions
         if line[0:3] == "T =":
             reading_conf = True
@@ -37,7 +36,7 @@ def convert(infile, outfile, version=""):
                 conf_set.append(configuration)
 
         # Here I read the actual instructions
-        if reading_conf:\
+        if reading_conf:
             configuration.append(line)
 
     # counts the nodes and infer rows and columns (always assumes a squared mesh)
@@ -53,7 +52,7 @@ def convert(infile, outfile, version=""):
 
             time = conf[0]                          # Line with the timestamp
             time = int(time.split(" ")[-1][:-1])    # extract just the timestamp without the "\n" and parse to int
-            
+
             instrs = conf[1:]   # Set of all instructions in the current configuration
 
             # Write the timestamp
