@@ -6,11 +6,11 @@ def counter(infile, outfile):
         reader = csv.reader(f)
         counts = {
             'NOP': {}, 
-            'LW': {},  # Unifica LWD e LWI in LW
-            'SW': {},  # Unifica SWD e SWI in SW
-            'ADD': {},  # Ora include anche SSUB
-            'MUL': {},  # Categoria MUL
-            'OTHERS': {}  # Categoria per le istruzioni non specificate
+            'LW': {},  # Consider both LWD and LWI
+            'SW': {},  # Consider both SWD and SWI
+            'ADD': {},  # Consider both ADD and SSUB
+            'MUL': {},  
+            'OTHERS': {}  # For all other instructions
         }
         current_timestamp = None
 
@@ -20,7 +20,7 @@ def counter(infile, outfile):
                 current_timestamp = match.group(1)
                 if current_timestamp not in counts:
                     for key in counts:
-                        counts[key][current_timestamp] = 0  # Inizializzazione dei conteggi
+                        counts[key][current_timestamp] = 0  
             else:
                 counts['NOP'][current_timestamp] += row.count("NOP")
                 for instr in row:
@@ -30,14 +30,14 @@ def counter(infile, outfile):
                         counts['LW'][current_timestamp] += 1
                     elif re.match(r"SW[D|I]\s+\w+", instr) or re.match(r"SW[D|I]\s+\w+,\s*\w+", instr):
                         counts['SW'][current_timestamp] += 1
-                    elif "ADD" in instr or "SSUB" in instr:  # Ora include SSUB nella categoria ADD
+                    elif "ADD" in instr or "SSUB" in instr:  
                         counts['ADD'][current_timestamp] += 1
                     elif "MUL" in instr:
                         counts['MUL'][current_timestamp] += 1
                     else:
-                        counts['OTHERS'][current_timestamp] += 1  # Tutte le altre istruzioni
+                        counts['OTHERS'][current_timestamp] += 1  
 
-    # Formattazione dell'output
+    
     out_string = "T\t" + "\t".join(counts['NOP'].keys()) + "\n"
     for key in counts:
         out_string += key + "\t" + "\t".join(str(counts[key][timestamp]) for timestamp in counts[key]) + "\n"
