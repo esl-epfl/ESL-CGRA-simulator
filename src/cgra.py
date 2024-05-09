@@ -409,4 +409,3 @@ def run( kernel, version="", pr="ROUT", limit=100, load_addrs=None, store_addrs=
         for row in sorted_mem: csv.writer(f).writerow(row)
 
     print("\n\nEND")
-
