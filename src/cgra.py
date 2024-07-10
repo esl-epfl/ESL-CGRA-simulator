@@ -1,3 +1,4 @@
+import copy
 import numpy as np
 from ctypes import c_int32
 import csv
@@ -20,6 +21,19 @@ MAX_32b = 0xFFFFFFFF
 srcs    = ['ZERO', 'SELF', 'RCL', 'RCR', 'RCT', 'RCB',  'R0', 'R1', 'R2', 'R3', 'IMM']
 dsts    = ['SELF', 'RCL', 'RCR', 'RCT', 'RCB','R0', 'R1', 'R2', 'R3']
 regs    = dsts[-4:]
+
+operation_latency_mapping = {}
+script_dir = os.path.dirname(os.path.abspath(__file__))
+csv_file_path = os.path.join(script_dir, 'operation_characterization.csv')
+
+with open(csv_file_path, 'r') as csvfile:
+    reader = csv.reader(csvfile)
+    next(reader)
+    for row in reader:
+        operation, key = row
+        key = int(key)
+        if operation not in operation_latency_mapping:
+            operation_latency_mapping[operation] = key
 
 class INSTR:
     def __init__( self,matrix):
@@ -71,6 +85,8 @@ class CGRA:
         self.memory     = memory
         self.instr2exec = 0
         self.cycles     = 0
+        self.instr_time = []
+        self.max_instr = None
         if read_addrs is not None and len(read_addrs) == N_COLS:
             self.load_addr = read_addrs
         else:
@@ -97,6 +113,8 @@ class CGRA:
             for c in range(N_COLS):
                 self.cells[r][c].update()
         instr2exec = self.instr2exec
+        self.max_instr = None
+        self.lw_count = [0] * N_COLS
         if PRINT_OUTS: print("Instr = ", self.cycles, "(",instr2exec,")")
         for r in range(N_ROWS):
             for c in range(N_COLS):
@@ -104,16 +122,33 @@ class CGRA:
                 b ,e = self.cells[r][c].exec( op )
                 if b != 0: self.instr2exec = b - 1 #To avoid more logic afterwards
                 if e != 0: self.exit = True
+                if  self.max_instr is None or self.cells[r][c].time > self.max_instr.time:
+                    self.max_instr = self.cells[r][c]
+                if self.cells[r][c].op in ["LWD", "LWI", "SWD","SWI"]:      
+                    self.lw_count[c] += 1
             outs    = [ self.cells[r][i].out        for i in range(N_COLS) ]
             insts   = [ self.cells[r][i].instr      for i in range(N_COLS) ]
             ops     = [ self.cells[r][i].op         for i in range(N_COLS) ]
             reg     = [[ self.cells[r][i].regs[regs[x]]   for i in range(N_COLS) ] for x in range(len(regs)) ]
             print_out( prs, outs, insts, ops, reg )
 
+        self.compute_mem_latency()  
+        self.max_instr.instr2exec = instr2exec 
+        self.instr_time.append(copy.copy(self.max_instr))
         self.instr2exec += 1
         self.cycles += 1
         return self.exit
 
+    # A memory access to a memory bank has a 2-cycle overhead, 
+    # plus 1 additional cycle per PE trying to access it.
+    def compute_mem_latency(self):
+        lw_time = 0
+        if any(count >= 1 for count in self.lw_count):
+            lw_time = 1
+        for k in range (N_COLS):
+            lw_time += (self.lw_count[k])
+        self.max_instr.time = max(self.max_instr.time, lw_time)
+      
     def get_neighbour_address( self, r, c, dir ):
         n_r = r
         n_c = c
@@ -181,6 +216,7 @@ class PE:
         self.regs       = {'R0':0, 'R1':0, 'R2':0, 'R3':0 }
         self.op         = ""
         self.instr      = ""
+        self.time = 0
 
     def get_out( self ):
         return self.old_out
@@ -375,6 +411,17 @@ class PE:
     ops_jump    = { 'JUMP'      : '' }
     ops_exit    = { 'EXIT'      : '' }
 
+def display_characterization(cgra):
+    total_time = 0
+    print("Longest instructions per cycle:\n")
+    for index, item in enumerate(cgra.instr_time):
+            print("Cycle:", index + 1, "( ", item.instr2exec, " )")
+            print("Instruction:", item.instr)
+            print("Time:", item.time, "CC\n")
+            total_time += item.time
+    print("\nTotal time for all instructions:", total_time, "CC")
+
+
 def run( kernel, version="", pr="ROUT", limit=100, load_addrs=None, store_addrs=None):
     ker = []
     mem = []
@@ -407,5 +454,5 @@ def run( kernel, version="", pr="ROUT", limit=100, load_addrs=None, store_addrs=
     sorted_mem = sorted(mem, key=lambda x: x[0])
     with open( kernel + "/"+FILENAME_MEM_O+version+EXT, 'w+') as f:
         for row in sorted_mem: csv.writer(f).writerow(row)
-
+    display_characterization(cgra)
     print("\n\nEND")
