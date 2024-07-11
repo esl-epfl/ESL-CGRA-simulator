@@ -1,4 +1,4 @@
-# operation_latency_mapping
+# operation_latency_cc_mapping
 NOP,1
 EXIT,2
 SADD,1
