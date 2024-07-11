@@ -1,7 +1,6 @@
 import copy
 import os.path
 import csv
-# from cgra import N_ROWS, N_COLS
 
 OPERATIONS_MEMORY_ACCESS = ["LWD", "LWI", "SWD","SWI"]
 
@@ -59,30 +58,9 @@ def get_latency_cc(self):
     self.instr_latency_cc.append(copy.copy(self.max_latency_instr))
     self.total_latency_cc += self.instr_latency_cc[-1].latency_cc
 
-
-# Example usage:
-# Assuming cgra is an object with attributes instr_latency_cc and total_latency_cc
-
 def display_characterization(cgra):
     print("Longest instructions per cycle:\n")
     print("{:<8} {:<25} {:<10}".format("Cycle", "Instruction", "Latency (CC)"))
     for index, item in enumerate(cgra.instr_latency_cc):
         print("{:<2} {:<6} {:<25} {:<10}".format(index + 1, f'({item.instr2exec})', item.instr, item.latency_cc))
     print("\nTotal latency for all instructions:", cgra.total_latency_cc, "CC")
-
-
-# def display_characterization(cgra):
-#     print("Longest instructions per cycle:\n")
-#     print("{:<8} {:<20} {:<10}".format("Cycle", "Instruction", "Latency"))
-#     for index, item in enumerate(cgra.instr_latency_cc):
-#         print("{:<2} ({:<8}) {:<20} {:<10} CC".format(index + 1, item.instr2exec, item.instr, item.latency_cc))
-#     print("\nTotal latency for all instructions:", cgra.total_latency_cc, "CC")
-
-
-# Example usage:
-# Assuming cgra is an object with attributes instr_latency_cc and total_latency_cc
-# display_characterization(cgra)
-
-# Example usage:
-# Assuming cgra is an object with attributes instr_latency_cc and total_latency_cc
-# display_characterization(cgra)
