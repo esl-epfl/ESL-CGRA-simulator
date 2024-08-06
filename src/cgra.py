@@ -1,8 +1,9 @@
+import copy
 import numpy as np
 from ctypes import c_int32
 import csv
 import os.path
-from characterization import load_operation_characterization, display_characterization, get_latency_cc
+from characterization import display_characterization, get_latency_cc
 from kernels import *
 
 # CGRA from left to right, top to bottom
@@ -20,8 +21,7 @@ MAX_32b = 0xFFFFFFFF
 srcs    = ['ZERO', 'SELF', 'RCL', 'RCR', 'RCT', 'RCB',  'R0', 'R1', 'R2', 'R3', 'IMM']
 dsts    = ['SELF', 'RCL', 'RCR', 'RCT', 'RCB','R0', 'R1', 'R2', 'R3']
 regs    = dsts[-4:]
-operation_latency_mapping = {}
-operation_latency_mapping = load_operation_characterization(operation_latency_mapping, "latency_cc")
+flag_poll_cnt = 0
 class INSTR:
     def __init__( self,matrix):
         self.time = matrix[0][0]                        # ToDo: Fix how we assign this length
@@ -48,8 +48,8 @@ def print_out( prs, outs, insts, ops, reg ):
             elif    pr == "R1"   : pnt = reg[1]
             elif    pr == "R2"   : pnt = reg[2]
             elif    pr == "R3"   : pnt = reg[3]
-
-            out_string += "["
+            if pnt != []:
+                out_string += "["
             for i in range(len(pnt)):
                 out_string += "{{{}:4}}".format(i)
                 if i == (len(pnt) - 1):
@@ -83,6 +83,7 @@ class CGRA:
             self.store_addr = write_addrs
         else:
             self.store_addr = [0]*N_COLS
+        self.init_store = copy.copy(self.store_addr)
         self.exit       = False
 
     def run( self, pr, limit ):
@@ -114,13 +115,12 @@ class CGRA:
             reg     = [[ self.cells[r][i].regs[regs[x]]   for i in range(N_COLS) ] for x in range(len(regs)) ]
             print_out( prs, outs, insts, ops, reg )
 
-        get_latency_cc(self)  
+        get_latency_cc(self, prs)  
         self.instr2exec += 1
         self.cycles += 1
-        return self.exit
+        return self.exit    
 
 
-      
     def get_neighbour_address( self, r, c, dir ):
         n_r = r
         n_c = c
@@ -230,7 +230,6 @@ class PE:
             self.op      = instr[0]
         except:
             self.op = instr
-        self.latency_cc = int(operation_latency_mapping[self.op])
         if self.op in self.ops_arith:
             des     = instr[1]
             val1    = self.fetch_val( instr[2] )
@@ -417,5 +416,5 @@ def run( kernel, version="", pr="ROUT", limit=100, load_addrs=None, store_addrs=
     sorted_mem = sorted(mem, key=lambda x: x[0])
     with open( kernel + "/"+FILENAME_MEM_O+version+EXT, 'w+') as f:
         for row in sorted_mem: csv.writer(f).writerow(row)
-    display_characterization(cgra)
+    display_characterization(cgra, pr)
     print("\n\nEND")

@@ -25,3 +25,12 @@ LWI,2
 SWI,2
 SMUL,3
 FXPMUL,3
+
+# operation_active_row_coef_mapping
+ONE-TO-M, 1
+N-TO-M, 0 
+INTERLEAVED, 0
+# operation_cpu_loop_instrs_mapping
+ONE-TO-M, 5
+N-TO-M, 0 
+INTERLEAVED, 0
