@@ -12,7 +12,7 @@ N_COLS      = 4
 INSTR_SIZE  = N_ROWS+1
 MAX_COL     = N_COLS - 1
 MAX_ROW     = N_ROWS - 1
-
+BUS_TYPES = ["ONE-TO-M", "N-TO-M", "INTERLEAVED"]
 PRINT_OUTS  = 1
 
 MAX_32b = 0xFFFFFFFF
@@ -115,7 +115,7 @@ class CGRA:
             reg     = [[ self.cells[r][i].regs[regs[x]]   for i in range(N_COLS) ] for x in range(len(regs)) ]
             print_out( prs, outs, insts, ops, reg )
 
-        get_latency_cc(self, prs)  
+        get_latency_cc(self)  
         self.instr2exec += 1
         self.cycles += 1
         return self.exit    
@@ -189,6 +189,7 @@ class PE:
         self.op         = ""
         self.instr      = ""
         self.latency_cc = 0
+        self.addr       = 0
 
     def get_out( self ):
         return self.old_out
@@ -258,25 +259,27 @@ class PE:
 
         elif self.op in self.ops_lwd:
             des = instr[1]
+            self.addr = self.parent.load_addr[self.col]
             ret = self.parent.load_direct( self.col, 4 )
             if des in self.regs: self.regs[des] = ret
             self.out = ret
 
         elif self.op in self.ops_swd:
             val = self.fetch_val( instr[1] )
+            self.addr = self.parent.store_addr[self.col]
             self.parent.store_direct( self.col, val, 4 )
 
         elif self.op in self.ops_lwi:
             des = instr[1]
-            addr = self.fetch_val( instr[2] )
-            ret = self.parent.load_indirect(addr)
+            self.addr = self.fetch_val( instr[2] )
+            ret = self.parent.load_indirect(self.addr)
             if des in self.regs: self.regs[des] = ret
             self.out = ret
 
         elif self.op in self.ops_swi:
-            addr = self.fetch_val( instr[2] )
+            self.addr = self.fetch_val( instr[2] )
             val = self.fetch_val( instr[1] )
-            self.parent.store_indirect( addr, val )
+            self.parent.store_indirect( self.addr, val )
             pass
 
         elif self.op in self.ops_nop:
@@ -410,6 +413,7 @@ def run( kernel, version="", pr="ROUT", limit=100, load_addrs=None, store_addrs=
 
     # Run the kernel
     cgra = CGRA(ker, mem, load_addrs, store_addrs)
+    cgra.bus_type = next((item for item in BUS_TYPES if item in pr), "ONE-TO-M")
     mem = cgra.run(pr, limit)
 
     # Store the output sorted

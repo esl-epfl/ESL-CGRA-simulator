@@ -41,13 +41,12 @@ operation_latency_mapping = load_operation_characterization("latency_cc")
 bus_type_active_row_coef = load_operation_characterization("active_row_coef")
 bus_type_cpu_loop_instrs = load_operation_characterization("cpu_loop_instrs")
 
-def get_latency_cc(self, prs):  
-    bus_type = next((item for item in BUS_TYPES if item in prs), "ONE-TO-M")
+def get_latency_cc(self):
     self.max_latency_instr = None
-    mem_latency_cc = find_longest_operation(self)
-    mem_latency_cc = adjust_latency_for_bus(self, mem_latency_cc, bus_type)
-    if mem_latency_cc > self.max_latency_instr.latency_cc:
-        self.max_latency_instr.latency_cc = mem_latency_cc
+    longest_alu_op_latency_cc = get_latency_alu_cc(self)
+    total_mem_latency_cc = get_latency_mem_cc(self)
+    self.max_latency_instr.latency_cc = max(longest_alu_op_latency_cc, total_mem_latency_cc)
+    if total_mem_latency_cc > longest_alu_op_latency_cc:
         self.max_latency_instr.instr = f'MEM ({self.max_latency_instr.instr})'  
     if (self.exit):
         self.max_latency_instr.latency_cc += 1      
@@ -55,75 +54,69 @@ def get_latency_cc(self, prs):
     self.instr_latency_cc.append(copy.copy(self.max_latency_instr))
     self.total_latency_cc += self.instr_latency_cc[-1].latency_cc
 
-def find_longest_operation(self):
+def get_latency_alu_cc(self):
     from cgra import N_ROWS, N_COLS
-    self.mem_count = [0] * N_COLS
-    mem_latency_cc = 0
     for r in range(N_ROWS):
         for c in range(N_COLS):    
             self.cells[r][c].latency_cc = int(operation_latency_mapping[self.cells[r][c].op])                
             if self.max_latency_instr is None or self.cells[r][c].latency_cc > self.max_latency_instr.latency_cc:
-                self.max_latency_instr = self.cells[r][c]
-            if self.cells[r][c].op in OPERATIONS_MEMORY_ACCESS:      
-                mem_latency_cc += 1
-                self.mem_count[c] += 1
-    if mem_latency_cc >= 1:
-        mem_latency_cc += 1
-    return mem_latency_cc
+                self.max_latency_instr = self.cells[r][c]     
+    return self.max_latency_instr.latency_cc
 
-def adjust_latency_for_bus(self, mem_latency_cc, bus_type):
-    from cgra import N_ROWS, flag_poll_cnt
-    ACTIVE_ROW_COEF =  bus_type_active_row_coef[bus_type]
-    CPU_LOOP_INSTRS =  bus_type_cpu_loop_instrs[bus_type]
-    for i in range (N_ROWS):
-            if self.mem_count[i] != 0:
-                mem_latency_cc += ACTIVE_ROW_COEF
-    if CPU_LOOP_INSTRS != 0:
-        flag_poll_cnt += mem_latency_cc
-        if flag_poll_cnt % (CPU_LOOP_INSTRS - 1) == 0:
-            mem_latency_cc += 1    
-    if bus_type == "INTERLEAVED":
-        concurrent_accesses = group_sequential_accesses(self)
-        mem_latency_cc = find_longest_sequence(concurrent_accesses)
-    return mem_latency_cc
+def get_latency_mem_cc(self):
+    record_bank_access(self)
+    self.concurrent_accesses = group_dma_accesses(self)
+    dependencies = track_dependencies(self)
+    latency_cc = compute_latency_cc(self, dependencies)
+    return latency_cc
 
-def group_sequential_accesses(self):
+def record_bank_access(self):
     from cgra import N_ROWS, N_COLS
-    self.curr_lwd = [0] * 4
-    self.curr_swd = [0] * 4
-    covered_accesses = []
-    # count the number of direct accesses per column
     for r in range(N_ROWS):
         for c in range(N_COLS): 
-             if self.cells[r][c].op in OPERATIONS_MEMORY_ACCESS:     
-                if self.cells[r][c].op == "LWD":
-                    self.curr_lwd[c] += 1
-                if self.cells[r][c].op == "SWD":
-                    self.curr_swd[c] += 1
+            if self.cells[r][c].op in OPERATIONS_MEMORY_ACCESS:
+                self.cells[r][c].bank_index = compute_bank_index(self,r,c)
+
+def compute_bank_index(self, r, c) :
+    if self.bus_type == "INTERLEAVED":
+        if self.cells[r][c].op == "SWD":
+            index_pos = int(((self.cells[r][c].addr - self.init_store[0]) / 4) % 8)
+        else:
+            index_pos = int(((self.cells[r][c].addr - sorted(self.memory)[0][0]) / 4) % 8)
+    elif self.bus_type == "N-TO-M":
+        index_pos = 1
+    elif self.bus_type == "ONE-TO-M":
+        index_pos = 1
+    return index_pos
+
+def group_dma_accesses(self):
+    from cgra import N_ROWS, N_COLS
+    covered_accesses = []
     concurrent_accesses = [{} for _ in range(4)]
     # reorder memory accesses to group into concurrent executions
     # covered_accesses tracks the accesses that have already been visited
     for r in range(N_ROWS):
         for c in range(N_COLS):  
             if self.cells[r][c].op in OPERATIONS_MEMORY_ACCESS and (r, c) not in covered_accesses:
-                index_pos = record_bank_access(self, r, c)
-                covered_accesses.append((r, c))
-                if index_pos not in concurrent_accesses[r]:
-                    concurrent_accesses[r][index_pos] = []
-                concurrent_accesses[r][index_pos].append((r, c) )
+                covered_accesses, concurrent_accesses = update_accesses(covered_accesses, concurrent_accesses, r, c, r, self.cells[r][c].bank_index)
             else:
                 for k in range(N_ROWS):
                     if self.cells[k][c].op in OPERATIONS_MEMORY_ACCESS and (k, c) not in covered_accesses:
-                        index_pos = record_bank_access(self, k, c)
-                        covered_accesses.append((k, c))
-                        if index_pos not in concurrent_accesses[r]:
-                            concurrent_accesses[r][index_pos] = []
-                        concurrent_accesses[r][index_pos].append((k, c))
+                        covered_accesses, concurrent_accesses = update_accesses(covered_accesses, concurrent_accesses, r, c, k, self.cells[k][c].bank_index)
                         break
-    if not accesses_are_ordered(concurrent_accesses):
+    if self.bus_type != "INTERLEAVED":
+        concurrent_accesses = [{1: [(0, 0)] * len(covered_accesses)}, {}, {}, {}]
+    elif not accesses_are_ordered(concurrent_accesses):
         for i in range(N_ROWS - 1, 0, -1):
             concurrent_accesses[i-1] = rearrange_accesses(concurrent_accesses[i-1], concurrent_accesses[i]) 
     return concurrent_accesses
+
+def update_accesses(covered_accesses, concurrent_accesses, r, c, k, bank_index):
+    covered_accesses.append((k, c))
+    if bank_index not in concurrent_accesses[r]:
+        concurrent_accesses[r][bank_index] = []
+    concurrent_accesses[r][bank_index].append((k, c))
+    return covered_accesses, concurrent_accesses
 
 def accesses_are_ordered(concurrent_accesses):
     highest_row = [0] * 4
@@ -137,20 +130,6 @@ def accesses_are_ordered(concurrent_accesses):
                     highest_row[i] = current_access[0]
     return True
 
-def find_longest_sequence(concurrent_accesses):
-    from cgra import N_ROWS
-    latency = [1] * 4 
-    for i in range (N_ROWS):
-        for values in concurrent_accesses[i].values():
-            for current_access in values:
-                # find the position of an access within the conflict, as well as that of the next dependency
-                access_pos = find_position(concurrent_accesses[i], current_access[1]) + 1
-                if i < N_ROWS - 1:
-                    latency[current_access[1]] += access_pos - find_position(concurrent_accesses[i+1],current_access[1]) 
-                else:
-                    latency[current_access[1]] += access_pos
-    return max(latency)
-
 def rearrange_accesses(first_list, second_list):
     order_pairs = []
     for second_pairs in second_list.values():
@@ -163,6 +142,20 @@ def rearrange_accesses(first_list, second_list):
         sorted_first_list[key] = sorted_pairs
     return sorted_first_list
 
+def track_dependencies(self):
+    from cgra import N_ROWS
+    latency = [1] * 4 
+    for i in range (N_ROWS):
+        for values in self.concurrent_accesses[i].values():
+            for current_access in values:
+                # find the position of an access within the conflict, as well as that of the next dependency
+                access_pos = find_position(self.concurrent_accesses[i], current_access[1]) + 1
+                if i < N_ROWS - 1:
+                    latency[current_access[1]] += access_pos - find_position(self.concurrent_accesses[i+1],current_access[1]) 
+                else:
+                    latency[current_access[1]] += access_pos
+    return latency
+
 def find_position(conflict_pos, column):
     for pairs in conflict_pos.items():
         for pair in pairs[1]:
@@ -170,25 +163,25 @@ def find_position(conflict_pos, column):
                 return pairs[1].index(pair)
     return 0
 
-def record_bank_access(self, r, c) :
-    if self.cells[r][c].op == "LWD":
-        addr = self.load_addr[self.cells[r][c].col] - (4 * self.curr_lwd[c])
-        self.curr_lwd[c] -= 1
-    elif self.cells[r][c].op == "LWI":
-        instr = self.cells[r][c].instr
-        instr = instr.split()
-        addr = self.cells[r][c].fetch_val(instr[2])
-    elif self.cells[r][c].op == "SWD":
-        addr = self.store_addr[self.cells[r][c].col] - (4 * self.curr_swd[c])
-        index_pos = int(((addr - self.init_store[0]) / 4) % 8)
-        self.curr_swd[c] -= 1
-        return index_pos
-    elif self.cells[r][c].op == "SWI":
-        instr = self.cells[r][c].instr
-        instr = instr.split()
-        addr = self.cells[r][c].fetch_val(instr[2]) 
-    index_pos = int(((addr - sorted(self.memory)[0][0]) / 4) % 8)
-    return index_pos
+def compute_latency_cc(self, dependencies):
+    from cgra import N_ROWS, N_COLS, flag_poll_cnt
+    ACTIVE_ROW_COEF =  bus_type_active_row_coef[self.bus_type]
+    CPU_LOOP_INSTRS =  bus_type_cpu_loop_instrs[self.bus_type]
+    mem_count = [0] * N_COLS
+    latency_cc = max(dependencies)
+    for r in range(N_ROWS):
+        for c in range(N_COLS):                
+            if self.cells[r][c].op in OPERATIONS_MEMORY_ACCESS:      
+                mem_count[c] += 1
+    if ACTIVE_ROW_COEF != 0:
+        for i in range (N_ROWS):
+            if mem_count[i] != 0:
+                latency_cc += ACTIVE_ROW_COEF
+    if CPU_LOOP_INSTRS != 0:
+        flag_poll_cnt += latency_cc
+        if flag_poll_cnt % (CPU_LOOP_INSTRS - 1) == 0:
+            latency_cc += 1      
+    return latency_cc
 
 def display_characterization(cgra, pr):
     if any(item in pr for item in ["OP_MAX_LAT", "ALL_LAT_INFO"]):
@@ -200,4 +193,3 @@ def display_characterization(cgra, pr):
         print(f'\nConfiguration time: {len(cgra.instrs)} CC')
         print(f'Time between end of configuration and start of first iteration: {math.ceil(14 + (len(cgra.instrs) * 3))} CC')
         print(f'Total time for all instructions: {cgra.total_latency_cc}')
-    
