@@ -5,6 +5,7 @@ import csv
 import os.path
 from characterization import display_characterization, get_latency_cc
 from kernels import *
+from memory import *
 
 # CGRA from left to right, top to bottom
 N_ROWS      = 4
@@ -21,7 +22,7 @@ MAX_32b = 0xFFFFFFFF
 srcs    = ['ZERO', 'SELF', 'RCL', 'RCR', 'RCT', 'RCB',  'R0', 'R1', 'R2', 'R3', 'IMM']
 dsts    = ['SELF', 'RCL', 'RCR', 'RCT', 'RCB','R0', 'R1', 'R2', 'R3']
 regs    = dsts[-4:]
-flag_poll_cnt = 0
+
 class INSTR:
     def __init__( self,matrix):
         self.time = matrix[0][0]                        # ToDo: Fix how we assign this length
@@ -61,7 +62,7 @@ def print_out( prs, outs, insts, ops, reg ):
 
 
 class CGRA:
-    def __init__( self, kernel, memory, read_addrs, write_addrs):
+    def __init__( self, kernel, memory, read_addrs, write_addrs, memory_manager):
         self.cells = []
         for r in range(N_ROWS):
             list = []
@@ -72,6 +73,8 @@ class CGRA:
         self.memory     = memory
         self.instr2exec = 0
         self.cycles     = 0
+        self.N_COLS     = N_COLS
+        self.N_ROWS     = N_ROWS  
         self.total_latency_cc = 0
         self.instr_latency_cc = []
         self.max_latency_instr = None
@@ -84,6 +87,7 @@ class CGRA:
         else:
             self.store_addr = [0]*N_COLS
         self.init_store = copy.copy(self.store_addr)
+        self.memory_manager   = memory_manager
         self.exit       = False
 
     def run( self, pr, limit ):
@@ -114,7 +118,7 @@ class CGRA:
             ops     = [ self.cells[r][i].op         for i in range(N_COLS) ]
             reg     = [[ self.cells[r][i].regs[regs[x]]   for i in range(N_COLS) ] for x in range(len(regs)) ]
             print_out( prs, outs, insts, ops, reg )
-
+        self.flag_poll_cnt = 0
         get_latency_cc(self)  
         self.instr2exec += 1
         self.cycles += 1
@@ -387,7 +391,7 @@ class PE:
 
 
 
-def run( kernel, version="", pr="ROUT", limit=100, load_addrs=None, store_addrs=None):
+def run( kernel, version="", pr="ROUT", limit=100, load_addrs=None, store_addrs=None, memory_manager=MEMORY()):
     ker = []
     mem = []
 
@@ -412,8 +416,7 @@ def run( kernel, version="", pr="ROUT", limit=100, load_addrs=None, store_addrs=
                 return None
 
     # Run the kernel
-    cgra = CGRA(ker, mem, load_addrs, store_addrs)
-    cgra.bus_type = next((item for item in BUS_TYPES if item in pr), "ONE-TO-M")
+    cgra = CGRA(ker, mem, load_addrs, store_addrs, memory_manager)
     mem = cgra.run(pr, limit)
 
     # Store the output sorted
