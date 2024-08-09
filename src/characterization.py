@@ -7,40 +7,32 @@ OPERATIONS_MEMORY_ACCESS = ["LWD", "LWI", "SWD","SWI"]
 BUS_TYPES = ["ONE-TO-M", "N-TO-M", "INTERLEAVED"]
 INTERVAL_CST = 14
 
-def load_operation_characterization(characterization_type, mapping_file):
+def load_operation_characterization(characterization_type, mapping_file='operation_characterization.csv'):
     operation_mapping = {}
-    script_dir = os.path.dirname(os.path.abspath(__file__))
-    csv_file_path = os.path.join(script_dir, mapping_file)
+    csv_file_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), mapping_file)
     with open(csv_file_path, 'r') as csvfile:
         reader = csv.reader(csvfile)
+        current_section = None  
         for row in reader:
-            if not row:
-                continue
-            if row[0].startswith('#'):
-                current_section = row[0].strip('# ')
-                continue
+            if not row or row[0].startswith('#'):
+                current_section = row[0].strip('# ') if row else current_section
+                continue      
             if current_section == f'operation_{characterization_type}_mapping':
-                if len(row) == 3:
-                    key_type, value_type = int, float
-                    operation, key, value = row
-                    key = key_type(key)
-                    value = value_type(value)
+                operation, *rest = row         
+                if len(rest) == 1:
+                    key = int(rest[0])
+                    operation_mapping[operation] = key
+                elif len(rest) == 2:
+                    key = int(rest[0])
+                    value = float(rest[1])
                     if operation not in operation_mapping:
                         operation_mapping[operation] = {}
                     operation_mapping[operation][key] = value
-                elif len(row) == 2:
-                        key_type, value_type = int, int
-                        operation, key = row
-                        key = key_type(key)
-                        if operation not in operation_mapping:
-                            operation_mapping[operation] = key
-            else:
-                continue 
     return operation_mapping
 
-operation_latency_mapping = load_operation_characterization("latency_cc", 'operation_characterization.csv')
-bus_type_active_row_coef = load_operation_characterization("active_row_coef", 'operation_characterization.csv')
-bus_type_cpu_loop_instrs = load_operation_characterization("cpu_loop_instrs", 'operation_characterization.csv')
+operation_latency_mapping = load_operation_characterization("latency_cc")
+bus_type_active_row_coef = load_operation_characterization("active_row_coef")
+bus_type_cpu_loop_instrs = load_operation_characterization("cpu_loop_instrs")
 
 # This function takes the maximum latency between the memory operations and the non-memory operations in the instruction
 def get_latency_cc(cgra):
@@ -87,8 +79,8 @@ def compute_bank_index(cgra, r, c):
     return index_pos
 
 def group_dma_accesses(cgra):
-    # For each row, scan the PEs for memory accesses
-    # If it lands on a column without a memory access, then scan all the rows on that column (= push up/down) 
+    # For each row, scan the PEs for memory accesses and place them into concurrent_accesses
+    # If a column has no memory access, then scan all the rows on that column (=push up) 
     cgra.covered_accesses = []
     concurrent_accesses = [{} for _ in range(4)]
     for r in range(cgra.N_ROWS):
@@ -101,8 +93,7 @@ def group_dma_accesses(cgra):
                         cgra.covered_accesses, concurrent_accesses = mark_access(cgra.covered_accesses, concurrent_accesses, r, c, k, cgra.cells[k][c].bank_index)
                         break
     if not accesses_are_ordered(cgra, concurrent_accesses):
-        for i in range(cgra.N_ROWS - 1, 0, -1):
-            concurrent_accesses[i-1] = rearrange_accesses(concurrent_accesses[i-1], concurrent_accesses[i]) 
+        concurrent_accesses = rearrange_accesses(cgra, concurrent_accesses) 
     return concurrent_accesses
 
 def mark_access(covered_accesses, concurrent_accesses, r, c, k, bank_index):
@@ -112,31 +103,37 @@ def mark_access(covered_accesses, concurrent_accesses, r, c, k, bank_index):
     return covered_accesses, concurrent_accesses
 
 def accesses_are_ordered(cgra, concurrent_accesses):
-    highest_row = [0] * 4
-    for i in range (cgra.N_ROWS):
-        for values in concurrent_accesses[i].values():
-            for current_access in values:
-                if highest_row[i] > current_access[0]:
-                    return False
-                else:
-                    highest_row[i] = current_access[0]
-    return True
+    if (cgra.memory_manager.bus_type != "INTERLEAVED"):
+        return False
+    else:
+        highest_row = [0] * 4
+        for i in range (cgra.N_ROWS):
+            for values in concurrent_accesses[i].values():
+                for current_access in values:
+                    if highest_row[i] > current_access[0]:
+                        return False
+                    else:
+                        highest_row[i] = current_access[0]
+        return True
 
 # This function arranges the concurrent lists to ensure they match the DMA's behavior
-def rearrange_accesses(first_list, second_list):
-    order_pairs = [pair[1] for pairs in second_list.values() for pair in pairs][::-1]
-    return {key: sorted(pairs, key=lambda x: order_pairs.index(x[1]) if x[1] in order_pairs else float('inf'))
-            for key, pairs in first_list.items()}
+def rearrange_accesses(cgra, concurrent_accesses):
+    if cgra.memory_manager.bus_type == "INTERLEAVED":
+        for i in range(cgra.N_ROWS - 1, 0, -1):
+            order_pairs = [pair[1] for pairs in concurrent_accesses[i].values() for pair in pairs][::-1]  
+            concurrent_accesses[i-1] = {key: sorted(pairs, key=lambda x: order_pairs.index(x[1]) if x[1] in order_pairs else float('inf')) for key, pairs in concurrent_accesses[i-1].items()}
+    else:
+        # Latencies for non-interleaved bus types require the total number of accesses
+        concurrent_accesses = [{1: [(0, 0)] * len(cgra.covered_accesses)}, {}, {}, {}]
+    return concurrent_accesses
 
 def track_dependencies(cgra):
-    # Latencies for non-interleaved bus types require the total number of accesses  
-    if cgra.memory_manager.bus_type != "INTERLEAVED":
-        cgra.concurrent_accesses = [{1: [(0, 0)] * len(cgra.covered_accesses)}, {}, {}, {}]
     latency = [1] * 4 
     for i in range (cgra.N_ROWS):
         for values in cgra.concurrent_accesses[i].values():
             for current_access in values:
-                # find the position of an access within the conflict, as well as that of the next dependency
+                # Compare each access with its next dependency (=subsequent access at same column)
+                # Record the difference between the access within the conflict, and the subsequent access
                 current_pos = find_position(cgra.concurrent_accesses[i], current_access[1]) + 1
                 next_pos = find_position(cgra.concurrent_accesses[i+1], current_access[1]) if i < cgra.N_ROWS - 1 else 0
                 latency[current_access[1]] += current_pos - next_pos
@@ -171,7 +168,7 @@ def compute_latency_cc(cgra, dependencies):
 
 def display_characterization(cgra, pr):
     if any(item in pr for item in ["OP_MAX_LAT", "ALL_LAT_INFO"]):
-        print("Longest instructions per cycle:\n")
+        print("\nLongest instructions per cycle:\n")
         print("{:<8} {:<25} {:<10}".format("Cycle", "Instruction", "Latency (CC)"))
         for index, item in enumerate(cgra.instr_latency_cc):
             print("{:<2} {:<6} {:<25} {:<10}".format(index + 1, f'({item.instr2exec})', item.instr, item.latency_cc))
