@@ -2,45 +2,43 @@ import copy
 import math
 import os.path
 import csv
+import re
 
 OPERATIONS_MEMORY_ACCESS = ["LWD", "LWI", "SWD","SWI"]
 BUS_TYPES = ["ONE-TO-M", "N-TO-M", "INTERLEAVED"]
+IDENTICAL_INSTR_CST = 25
+CLK_PERIOD  = 12.5E-09 # 12.5 ns 
 INTERVAL_CST = 14
 
-def load_operation_characterization(characterization_type, mapping_file):
+def load_operation_characterization(characterization_type, mapping_file='operation_characterization.csv'):
     operation_mapping = {}
-    script_dir = os.path.dirname(os.path.abspath(__file__))
-    csv_file_path = os.path.join(script_dir, mapping_file)
+    csv_file_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), mapping_file)
     with open(csv_file_path, 'r') as csvfile:
         reader = csv.reader(csvfile)
+        current_section = None  
         for row in reader:
-            if not row:
-                continue
-            if row[0].startswith('#'):
-                current_section = row[0].strip('# ')
-                continue
+            if not row or row[0].startswith('#'):
+                current_section = row[0].strip('# ') if row else current_section
+                continue      
             if current_section == f'operation_{characterization_type}_mapping':
-                if len(row) == 3:
-                    key_type, value_type = int, float
-                    operation, key, value = row
-                    key = key_type(key)
-                    value = value_type(value)
+                operation, *rest = row         
+                if len(rest) == 1:
+                    key = int(rest[0])
+                    operation_mapping[operation] = key
+                elif len(rest) == 2:
+                    key = int(rest[0])
+                    value = float(rest[1])
                     if operation not in operation_mapping:
                         operation_mapping[operation] = {}
                     operation_mapping[operation][key] = value
-                elif len(row) == 2:
-                        key_type, value_type = int, int
-                        operation, key = row
-                        key = key_type(key)
-                        if operation not in operation_mapping:
-                            operation_mapping[operation] = key
-            else:
-                continue 
     return operation_mapping
 
-operation_latency_mapping = load_operation_characterization("latency_cc", 'operation_characterization.csv')
-bus_type_active_row_coef = load_operation_characterization("active_row_coef", 'operation_characterization.csv')
-bus_type_cpu_loop_instrs = load_operation_characterization("cpu_loop_instrs", 'operation_characterization.csv')
+operation_latency_mapping = load_operation_characterization("latency_cc")
+bus_type_active_row_coef = load_operation_characterization("active_row_coef")
+bus_type_cpu_loop_instrs = load_operation_characterization("cpu_loop_instrs")
+operation_power_mapping = load_operation_characterization("power_w")
+operation_passive_power_mapping = load_operation_characterization("passive_power_w")
+operation_clk_gate_mapping = load_operation_characterization("clk_gate_power_w")
 
 # This function takes the maximum latency between the memory operations and the non-memory operations in the instruction
 def get_latency_cc(cgra):
@@ -49,19 +47,19 @@ def get_latency_cc(cgra):
     total_mem_latency_cc = get_latency_mem_cc(cgra)
     cgra.max_latency_instr.latency_cc = max(longest_alu_op_latency_cc, total_mem_latency_cc)
     if total_mem_latency_cc > longest_alu_op_latency_cc:
-        cgra.max_latency_instr.instr = f'MEM ({cgra.max_latency_instr.instr})'  
+        cgra.max_latency_instr.instr = f'MEM ({cgra.max_latency_instr.instr})'
     if (cgra.exit):
-        cgra.max_latency_instr.latency_cc += 1      
-    cgra.max_latency_instr.instr2exec = cgra.instr2exec    
+        cgra.max_latency_instr.latency_cc += 1
+    cgra.max_latency_instr.instr2exec = cgra.instr2exec
     cgra.instr_latency_cc.append(copy.copy(cgra.max_latency_instr))
     cgra.total_latency_cc += cgra.instr_latency_cc[-1].latency_cc
 
 def get_latency_alu_cc(cgra):
     for r in range(cgra.N_ROWS):
-        for c in range(cgra.N_COLS):    
+        for c in range(cgra.N_COLS):
             cgra.cells[r][c].latency_cc = int(operation_latency_mapping[cgra.cells[r][c].op])                
             if cgra.max_latency_instr is None or cgra.cells[r][c].latency_cc > cgra.max_latency_instr.latency_cc:
-                cgra.max_latency_instr = cgra.cells[r][c]     
+                cgra.max_latency_instr = cgra.cells[r][c]
     return cgra.max_latency_instr.latency_cc
 
 def get_latency_mem_cc(cgra):
@@ -87,8 +85,8 @@ def compute_bank_index(cgra, r, c):
     return index_pos
 
 def group_dma_accesses(cgra):
-    # For each row, scan the PEs for memory accesses
-    # If it lands on a column without a memory access, then scan all the rows on that column (= push up/down) 
+    # For each row, scan the PEs for memory accesses and place them into concurrent_accesses
+    # If a column has no memory access, then scan all the rows on that column (=push up) 
     cgra.covered_accesses = []
     concurrent_accesses = [{} for _ in range(4)]
     for r in range(cgra.N_ROWS):
@@ -101,8 +99,7 @@ def group_dma_accesses(cgra):
                         cgra.covered_accesses, concurrent_accesses = mark_access(cgra.covered_accesses, concurrent_accesses, r, c, k, cgra.cells[k][c].bank_index)
                         break
     if not accesses_are_ordered(cgra, concurrent_accesses):
-        for i in range(cgra.N_ROWS - 1, 0, -1):
-            concurrent_accesses[i-1] = rearrange_accesses(concurrent_accesses[i-1], concurrent_accesses[i]) 
+        concurrent_accesses = rearrange_accesses(cgra, concurrent_accesses) 
     return concurrent_accesses
 
 def mark_access(covered_accesses, concurrent_accesses, r, c, k, bank_index):
@@ -112,31 +109,39 @@ def mark_access(covered_accesses, concurrent_accesses, r, c, k, bank_index):
     return covered_accesses, concurrent_accesses
 
 def accesses_are_ordered(cgra, concurrent_accesses):
-    highest_row = [0] * 4
-    for i in range (cgra.N_ROWS):
-        for values in concurrent_accesses[i].values():
-            for current_access in values:
-                if highest_row[i] > current_access[0]:
-                    return False
-                else:
-                    highest_row[i] = current_access[0]
-    return True
+    if (cgra.memory_manager.bus_type != "INTERLEAVED"):
+        return False
+    else:
+        highest_row = [0] * 4
+        for i in range (cgra.N_ROWS):
+            for values in concurrent_accesses[i].values():
+                for current_access in values:
+                    if highest_row[i] > current_access[0]:
+                        return False
+                    else:
+                        highest_row[i] = current_access[0]
+        return True
 
 # This function arranges the concurrent lists to ensure they match the DMA's behavior
-def rearrange_accesses(first_list, second_list):
-    order_pairs = [pair[1] for pairs in second_list.values() for pair in pairs][::-1]
-    return {key: sorted(pairs, key=lambda x: order_pairs.index(x[1]) if x[1] in order_pairs else float('inf'))
-            for key, pairs in first_list.items()}
+def rearrange_accesses(cgra, concurrent_accesses) :
+    if cgra.memory_manager.bus_type == "INTERLEAVED":
+        for i in range(cgra.N_ROWS - 1, 0, -1):
+            order_pairs = [pair[1] for pairs in concurrent_accesses[i].values() for pair in pairs][::-1]
+            concurrent_accesses[i-1] = {key: sorted(pairs, key=lambda x: order_pairs.index(x[1]) if x[1] in order_pairs else float('inf'))
+                    for key, pairs in concurrent_accesses[i-1].items()}
+    else:
+         # Latencies for non-interleaved bus types require the total number of accesses 
+        concurrent_accesses = [{1: [(0, 0)] * len(cgra.covered_accesses)}, {}, {}, {}]
+    return concurrent_accesses
 
-def track_dependencies(cgra):
-    # Latencies for non-interleaved bus types require the total number of accesses  
-    if cgra.memory_manager.bus_type != "INTERLEAVED":
-        cgra.concurrent_accesses = [{1: [(0, 0)] * len(cgra.covered_accesses)}, {}, {}, {}]
+def track_dependencies(cgra): 
     latency = [1] * 4 
+    # Iterate over each sequence (= flattened row), examining them two-by-two:
     for i in range (cgra.N_ROWS):
         for values in cgra.concurrent_accesses[i].values():
             for current_access in values:
-                # find the position of an access within the conflict, as well as that of the next dependency
+                # Compare each access with its next dependency (=subsequent access at same column)
+                # Record the difference between the access within the conflict, and the subsequent access
                 current_pos = find_position(cgra.concurrent_accesses[i], current_access[1]) + 1
                 next_pos = find_position(cgra.concurrent_accesses[i+1], current_access[1]) if i < cgra.N_ROWS - 1 else 0
                 latency[current_access[1]] += current_pos - next_pos
@@ -169,14 +174,134 @@ def compute_latency_cc(cgra, dependencies):
             latency_cc += 1  
     return latency_cc
 
+def get_power_w(cgra):
+    cgra.power.append([[0 for _ in range(cgra.N_COLS)] for _ in range(cgra.N_ROWS)])
+    cgra.energy.append([[0 for _ in range(cgra.N_COLS)] for _ in range(cgra.N_ROWS)])
+    for r in range(cgra.N_ROWS):
+        for c in range(cgra.N_COLS):
+            get_cell_power_w(cgra.cells[r][c], cgra.max_latency_instr.latency_cc)              
+            cgra.power[-1][r][c] = cgra.cells[r][c].power
+            get_cell_energy_j(cgra.cells[r][c], cgra.max_latency_instr.latency_cc)
+            cgra.energy[-1][r][c] = cgra.cells[r][c].energy
+        if (cgra.cycles > 1):
+            if (cgra.power[-1] == cgra.power[-2]): 
+                cgra.identical_instr += 1  
+    if (cgra.exit):
+        cgra.avg_pwr_array = [[0 for _ in range(cgra.N_COLS)] for _ in range(cgra.N_ROWS)]
+        cgra.energy_array = [[0 for _ in range(cgra.N_COLS)] for _ in range(cgra.N_ROWS)]
+        for index, item in enumerate(cgra.instr_latency_cc):     
+            for row_idx in range(cgra.N_ROWS):
+                for col_idx in range(cgra.N_COLS):
+                    cgra.avg_pwr_array[row_idx][col_idx] += (cgra.power[index][row_idx][col_idx] * item.latency_cc)
+                    cgra.energy_array[row_idx][col_idx] += cgra.energy[index][row_idx][col_idx]
+        for row_idx in range(cgra.N_ROWS):
+            for col_idx in range(cgra.N_COLS):
+                cgra.avg_pwr_array[row_idx][col_idx] /= cgra.total_latency_cc
+        cgra.avg_pwr = sum([power for row in cgra.avg_pwr_array for power in row])
+        cgra.avg_energy = sum([energy for row in cgra.energy_array for energy in row])
+        if cgra.identical_instr < IDENTICAL_INSTR_CST:
+            cgra.avg_pwr += 1.00E-4
+
+def get_cell_power_w(self, latency):  
+    if self.op in operation_power_mapping:
+        if self.op in self.ops_arith:
+            handle_alu(self)            
+        average_pwr = fetch_operation_value(self, self.op, latency, "power")
+        active_pwr = fetch_operation_value(self, self.op, self.latency_cc, "power")
+        self.power = average_pwr
+        if (fetch_operation_value(self, self.op,latency, "passive") != 0 ):             
+            self.active_energy = active_pwr * self.latency_cc 
+            self.passive_energy = fetch_operation_value(self, self.op,latency, "passive") * ( latency - self.latency_cc)
+            self.power = (self.active_energy + self.passive_energy) / latency      
+        if self.op == 'NOP' or self.op == 'EXIT':
+            self.power += fetch_operation_value(self, "CLK_IDLE", latency, "clk") 
+        else:
+            self.power += fetch_operation_value(self, "CLK_ACTIVE", latency, "clk") 
+
+def get_cell_energy_j(self, latency):  
+    if self.op in operation_power_mapping:
+        self.energy = self.power * latency
+
+def handle_alu(self):
+        from cgra import regs
+        pattern_r_digit = re.compile(r"r[0-3]", re.IGNORECASE)
+        pattern_rc_letter = re.compile(r"rc[b-lrt]", re.IGNORECASE)
+        pattern_numeric = re.compile(r"\b\d+\b")
+        matches = [elem.strip() for elem in re.split(r'[ ,]+', self.instr)[1:]]
+        matches_str = ' '.join(matches)
+        int_reg_cnt = len(pattern_r_digit.findall(matches_str))
+        ext_reg_cnt = len(pattern_rc_letter.findall(matches_str))
+        cst_cnt = len(pattern_numeric.findall(matches_str))
+        if self.out == 0:
+            self.params_info = "X0"
+        if self.op == 'SMUL' or self.op == 'FXPMUL': 
+            for match in pattern_r_digit.findall(self.op[1:]):
+                digit = int(match[1])
+                if self.regs[regs[digit]] == 1 or self.regs[regs[digit]] == 2:
+                    self.params_info = f'X{self.regs[regs[digit]]}'
+        if self.op == 'SMUL' or self.op == 'SADD': 
+            if ext_reg_cnt >= 1:
+                self.params_info = "EXT"
+            elif int_reg_cnt == 2 and cst_cnt == 1:
+                self.params_info = "CST" 
+            elif int_reg_cnt == 3:
+                self.params_info = "INT"
+
+def fetch_operation_value( self, op, latency, type):
+    if type == "power" :  
+        if (op + '_' + self.params_info) in operation_power_mapping:
+            op += '_' + self.params_info
+            if latency in operation_power_mapping[op]:
+                return operation_power_mapping[op][latency]
+            else:
+                return operation_power_mapping[op][self.latency_cc]
+        else:
+            if latency in operation_power_mapping[op]:
+                return operation_power_mapping[op][latency]  
+            else:
+                return operation_power_mapping[op][1]           
+    elif type == "passive" : 
+        if (self.params_info):
+            op += '_' + self.params_info           
+        if op in operation_passive_power_mapping:               
+            if latency in operation_passive_power_mapping[op]:       
+                return operation_passive_power_mapping[op][latency] 
+            else:
+                if 1 in operation_passive_power_mapping[op]:
+                    return operation_passive_power_mapping[op][1]  
+                else:
+                    return 0
+        else:
+            return 0 
+    if type == "clk" :
+        if latency in operation_clk_gate_mapping[op]:
+            return operation_clk_gate_mapping[op][latency]
+        else: return 0
+
 def display_characterization(cgra, pr):
     if any(item in pr for item in ["OP_MAX_LAT", "ALL_LAT_INFO"]):
-        print("Longest instructions per cycle:\n")
+        print("\nLongest instructions per cycle:\n")
         print("{:<8} {:<25} {:<10}".format("Cycle", "Instruction", "Latency (CC)"))
         for index, item in enumerate(cgra.instr_latency_cc):
             print("{:<2} {:<6} {:<25} {:<10}".format(index + 1, f'({item.instr2exec})', item.instr, item.latency_cc))
     if any(item in pr for item in ["TOTAL_LAT", "ALL_LAT_INFO"]):
-        print(f'\nConfiguration time: {len(cgra.instrs)} CC')
         cgra.interval_latency = math.ceil(INTERVAL_CST + (len(cgra.instrs) * 3))
-        print(f'Time between end of configuration and start of first iteration: {cgra.interval_latency} CC')
-        print(f'Total time for all instructions: {cgra.total_latency_cc}')
+        print(f'\nConfiguration time: {len(cgra.instrs)} CC\nTime between end of configuration and start of first iteration: {math.ceil(14 + (len(cgra.instrs) * 3))} CC\nTotal time for all instructions: {cgra.total_latency_cc}') 
+    if any(item in pr for item in ["AVG_OP_PWR_INFO", "ALL_PWR_EN_INFO"]):
+        print("\nAverage power per operation:\n")
+        out_string = ""
+        for r in range(cgra.N_ROWS):
+            out_string += "["
+            for i in range(len(cgra.avg_pwr_array[r])):
+                out_string += "{{{}:.2e}}".format(i)
+                if i == (len(cgra.avg_pwr_array[r]) - 1):
+                    out_string += "]\n"
+                else:
+                    out_string += ", "
+            out_string = out_string.format(*[o for o in cgra.avg_pwr_array[r]])
+        print(out_string)
+    if any(item in pr for item in ["AVG_INSTR_PWR_INFO", "ALL_PWR_EN_INFO"]):
+        print("\nPower estimation for all instructions:", format(cgra.avg_pwr, ".2e"), " W")
+    if any(item in pr for item in ["AVG_INSTR_EN_INFO", "ALL_PWR_EN_INFO"]):
+        print("\nTotal energy consumed:", format(cgra.avg_energy * CLK_PERIOD, ".2e"), "J")
+        print("\nClock period used:", CLK_PERIOD, "s")

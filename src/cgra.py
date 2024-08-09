@@ -3,7 +3,7 @@ import numpy as np
 from ctypes import c_int32
 import csv
 import os.path
-from characterization import display_characterization, get_latency_cc
+from characterization import display_characterization, get_latency_cc, get_power_w
 from kernels import *
 from memory import *
 
@@ -32,34 +32,46 @@ def ker_parse( data ):
     instrs = int(len(data)/( INSTR_SIZE  )) # Always have a CSV with as many csv-columns as CGA-columns. Each instruction starts with the instruction timestamp i nthe first column. The next instruction must be immediately after the last row of this instruction.
     return [ INSTR( data[r_i*INSTR_SIZE:(r_i+1)*INSTR_SIZE][0:] ) for r_i in range(instrs) ]
 
+def print_out( prs, outs, insts, ops, reg, power, energy ):
+    for r in range(N_ROWS):
+        if PRINT_OUTS:
+            out_string = ""
 
-def print_out( prs, outs, insts, ops, reg ):
-    if PRINT_OUTS:
-        out_string = ""
+            if type(prs) == str:
+                prs = [prs]
 
-        if type(prs) == str:
-            prs = [prs]
-
-        for pr in prs:
-            pnt = []
-            if      pr == "ROUT" : pnt = outs
-            elif    pr == "INST" : pnt = insts
-            elif    pr == "OPS"  : pnt = ops
-            elif    pr == "R0"   : pnt = reg[0]
-            elif    pr == "R1"   : pnt = reg[1]
-            elif    pr == "R2"   : pnt = reg[2]
-            elif    pr == "R3"   : pnt = reg[3]
-            if pnt != []:
-                out_string += "["
-            for i in range(len(pnt)):
-                out_string += "{{{}:4}}".format(i)
-                if i == (len(pnt) - 1):
-                    out_string += "]    "
-                else:
-                    out_string += ", "
-            out_string = out_string.format(*[o for o in pnt])
-        print(out_string)
-
+            for pr in prs:
+                pnt = []
+                if      pr == "ROUT" : pnt = outs[r]
+                elif    pr == "INST" : pnt = insts[r]
+                elif    pr == "OPS"  : pnt = ops[r]
+                elif    pr == "R0"   : pnt = reg[r][0]
+                elif    pr == "R1"   : pnt = reg[r][1]
+                elif    pr == "R2"   : pnt = reg[r][2]
+                elif    pr == "R3"   : pnt = reg[r][3]
+                elif    pr == "PWR_OP": pnt = power[r]
+                elif    pr == "EN_OP": pnt = energy[r]
+                if pnt != []:
+                    out_string += "["
+                for i in range(len(pnt)):
+                    if isinstance(pnt[i], float):
+                        out_string += "{{{}:.2e}}".format(i)
+                    else:
+                        out_string += "{{{}:4}}".format(i) 
+                    if i == (len(pnt) - 1):
+                        out_string += "]    "
+                    else:
+                        out_string += ", "
+                out_string = out_string.format(*[o for o in pnt])
+            print(out_string)
+    flattened_power = [power for row in power for power in row]
+    flattened_energy = [energy for row in energy for energy in row]
+    pwr_en_output = []
+    if any(item in prs for item in ["PWR_OP", "ALL_PWR_EN_INFO"]):
+        pwr_en_output.append(f'Power: {format(sum(flattened_power), ".2e")} W')
+    if any(item in prs for item in ["EN_OP", "ALL_PWR_EN_INFO"]):
+        pwr_en_output.append(f'Energy: {format(sum(flattened_energy), ".2e")} J')
+    if pwr_en_output: print(', '.join(pwr_en_output))
 
 class CGRA:
     def __init__( self, kernel, memory, read_addrs, write_addrs, memory_manager):
@@ -75,9 +87,13 @@ class CGRA:
         self.cycles     = 0
         self.N_COLS     = N_COLS
         self.N_ROWS     = N_ROWS  
+        self.power      = []
+        self.energy     = []
+        self.identical_instr = 0
+        self.max_latency_instr = None
         self.total_latency_cc = 0
         self.instr_latency_cc = []
-        self.max_latency_instr = None
+        
         if read_addrs is not None and len(read_addrs) == N_COLS:
             self.load_addr = read_addrs
         else:
@@ -106,6 +122,10 @@ class CGRA:
             for c in range(N_COLS):
                 self.cells[r][c].update()
         instr2exec = self.instr2exec
+        outs    = [[] for _ in range (N_COLS)]
+        insts   = [[] for _ in range (N_COLS)]
+        ops     = [[] for _ in range (N_COLS)]
+        reg     = [[] for _ in range (N_COLS)]
         if PRINT_OUTS: print("Instr = ", self.cycles, "(",instr2exec,")")
         for r in range(N_ROWS):
             for c in range(N_COLS):
@@ -113,13 +133,14 @@ class CGRA:
                 b ,e = self.cells[r][c].exec( op )
                 if b != 0: self.instr2exec = b - 1 #To avoid more logic afterwards
                 if e != 0: self.exit = True
-            outs    = [ self.cells[r][i].out        for i in range(N_COLS) ]
-            insts   = [ self.cells[r][i].instr      for i in range(N_COLS) ]
-            ops     = [ self.cells[r][i].op         for i in range(N_COLS) ]
-            reg     = [[ self.cells[r][i].regs[regs[x]]   for i in range(N_COLS) ] for x in range(len(regs)) ]
-            print_out( prs, outs, insts, ops, reg )
+            outs[r]     = ([ self.cells[r][i].out        for i in range(N_COLS) ])
+            insts[r]    = ([ self.cells[r][i].instr      for i in range(N_COLS) ])
+            ops[r]      = ([ self.cells[r][i].op         for i in range(N_COLS) ])
+            reg[r]      = ([[ self.cells[r][i].regs[regs[x]]   for i in range(N_COLS) ] for x in range(len(regs)) ])
         self.flag_poll_cnt = 0
         get_latency_cc(self)  
+        get_power_w(self) 
+        print_out( prs, outs, insts, ops, reg, self.power[-1], self.energy[-1])
         self.instr2exec += 1
         self.cycles += 1
         return self.exit    
@@ -193,6 +214,8 @@ class PE:
         self.op         = ""
         self.instr      = ""
         self.latency_cc = 0
+        self.power      = 0
+        self.energy     = 0
         self.addr       = 0
 
     def get_out( self ):
@@ -231,6 +254,7 @@ class PE:
         instr   = instr.replace(',', ' ')   # Remove the commas so we can speparate arguments by spaces
         self.instr = instr                  # Save this string as instruction to show
         instr   = instr.split()             # Split into chunks
+        self.params_info = ''
         try:
             self.op      = instr[0]
         except:
