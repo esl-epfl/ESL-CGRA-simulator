@@ -137,7 +137,9 @@ Optional `pr` parameters include:
 
 Outputs written using the `SWD` or `SWI` operations are written into a `memory_out.csv` file, so the `memory.csv` file is untouched for future executions. The `memory_out.csv` file is overriden on every run.
 
+### Estimator 
 
+For information concerning the estimation tool (latency, power, and energy simulator) please consult the [following link](./src/README.md).
 # Additional notes
 
 * If you make any modification to the utility scripts, you might need to restart the notebook for the changes to apply.
