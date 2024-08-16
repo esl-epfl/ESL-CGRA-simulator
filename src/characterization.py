@@ -48,7 +48,7 @@ def get_latency_cc(cgra):
     cgra.max_latency_instr.latency_cc = max(longest_alu_op_latency_cc, total_mem_latency_cc)
     if total_mem_latency_cc > longest_alu_op_latency_cc:
         cgra.max_latency_instr.instr = f'MEM ({cgra.max_latency_instr.instr})'
-    if (cgra.exit):
+    if (cgra.exit and cgra.max_latency_instr.instr != "EXIT"):
         cgra.max_latency_instr.latency_cc += 1
     cgra.max_latency_instr.instr2exec = cgra.instr2exec
     cgra.instr_latency_cc.append(copy.copy(cgra.max_latency_instr))
@@ -59,7 +59,7 @@ def get_latency_alu_cc(cgra):
         for c in range(cgra.N_COLS):
             cgra.cells[r][c].latency_cc = int(operation_latency_mapping[cgra.cells[r][c].op])                
             if cgra.max_latency_instr is None or cgra.cells[r][c].latency_cc > cgra.max_latency_instr.latency_cc:
-                cgra.max_latency_instr = cgra.cells[r][c]
+                cgra.max_latency_instr = copy.copy(cgra.cells[r][c])
     return cgra.max_latency_instr.latency_cc
 
 def get_latency_mem_cc(cgra):
@@ -77,7 +77,8 @@ def record_bank_access(cgra):
                 cgra.cells[r][c].bank_index = compute_bank_index(cgra,r,c)
 
 def compute_bank_index(cgra, r, c):
-    base_addr = cgra.init_store[0] if cgra.cells[r][c].op == "SWD" else sorted(cgra.memory)[0][0]  
+    if (cgra.memory):
+        base_addr = cgra.init_store[0] if cgra.cells[r][c].op == "SWD" else sorted(cgra.memory)[0][0]  
     if cgra.memory_manager.bus_type == "INTERLEAVED":
         index_pos = int(((cgra.cells[r][c].addr - base_addr) / cgra.memory_manager.spacing) % cgra.memory_manager.n_banks)
     else:
@@ -194,89 +195,73 @@ def get_power_w(cgra):
                 for col_idx in range(cgra.N_COLS):
                     cgra.avg_pwr_array[row_idx][col_idx] += (cgra.power[index][row_idx][col_idx] * item.latency_cc)
                     cgra.energy_array[row_idx][col_idx] += cgra.energy[index][row_idx][col_idx]
-        for row_idx in range(cgra.N_ROWS):
-            for col_idx in range(cgra.N_COLS):
-                cgra.avg_pwr_array[row_idx][col_idx] /= cgra.total_latency_cc
+        cgra.avg_pwr_array = [[value / cgra.total_latency_cc for value in row] for row in cgra.avg_pwr_array]
         cgra.avg_pwr = sum([power for row in cgra.avg_pwr_array for power in row])
         cgra.avg_energy = sum([energy for row in cgra.energy_array for energy in row])
         if cgra.identical_instr < IDENTICAL_INSTR_CST:
             cgra.avg_pwr += 1.00E-4
 
-def get_cell_power_w(self, latency):  
-    if self.op in operation_power_mapping:
-        if self.op in self.ops_arith:
-            handle_alu(self)            
-        average_pwr = fetch_operation_value(self, self.op, latency, "power")
-        active_pwr = fetch_operation_value(self, self.op, self.latency_cc, "power")
-        self.power = average_pwr
-        if (fetch_operation_value(self, self.op,latency, "passive") != 0 ):             
-            self.active_energy = active_pwr * self.latency_cc 
-            self.passive_energy = fetch_operation_value(self, self.op,latency, "passive") * ( latency - self.latency_cc)
-            self.power = (self.active_energy + self.passive_energy) / latency      
-        if self.op == 'NOP' or self.op == 'EXIT':
-            self.power += fetch_operation_value(self, "CLK_IDLE", latency, "clk") 
+def get_cell_power_w(cell, latency):  
+    if cell.op in operation_power_mapping:
+        if cell.op in cell.ops_arith:
+            handle_alu(cell)            
+        average_pwr = fetch_operation_value(cell, cell.op, latency, "power")
+        active_pwr = fetch_operation_value(cell, cell.op, cell.latency_cc, "power")
+        cell.power = average_pwr
+        if (fetch_operation_value(cell, cell.op,latency, "passive") != 0 ):             
+            cell.active_energy = active_pwr * cell.latency_cc 
+            cell.passive_energy = fetch_operation_value(cell, cell.op,latency, "passive") * ( latency - cell.latency_cc)
+            cell.power = (cell.active_energy + cell.passive_energy) / latency      
+        if cell.op == 'NOP' or cell.op == 'EXIT':
+            cell.power += fetch_operation_value(cell, "CLK_IDLE", latency, "clk") 
         else:
-            self.power += fetch_operation_value(self, "CLK_ACTIVE", latency, "clk") 
+            cell.power += fetch_operation_value(cell, "CLK_ACTIVE", latency, "clk") 
 
-def get_cell_energy_j(self, latency):  
-    if self.op in operation_power_mapping:
-        self.energy = self.power * latency
+def get_cell_energy_j(cell, latency):  
+    if cell.op in operation_power_mapping:
+        cell.energy = cell.power * latency
 
-def handle_alu(self):
+def handle_alu(cell):
         from cgra import regs
         pattern_r_digit = re.compile(r"r[0-3]", re.IGNORECASE)
         pattern_rc_letter = re.compile(r"rc[b-lrt]", re.IGNORECASE)
         pattern_numeric = re.compile(r"\b\d+\b")
-        matches = [elem.strip() for elem in re.split(r'[ ,]+', self.instr)[1:]]
+        matches = [elem.strip() for elem in re.split(r'[ ,]+', cell.instr)[1:]]
         matches_str = ' '.join(matches)
         int_reg_cnt = len(pattern_r_digit.findall(matches_str))
         ext_reg_cnt = len(pattern_rc_letter.findall(matches_str))
         cst_cnt = len(pattern_numeric.findall(matches_str))
-        if self.out == 0:
-            self.params_info = "X0"
-        if self.op == 'SMUL' or self.op == 'FXPMUL': 
-            for match in pattern_r_digit.findall(self.op[1:]):
+        if cell.out == 0:
+            cell.params_info = "X0"
+        if cell.op == 'SMUL' or cell.op == 'FXPMUL': 
+            for match in pattern_r_digit.findall(cell.op[1:]):
                 digit = int(match[1])
-                if self.regs[regs[digit]] == 1 or self.regs[regs[digit]] == 2:
-                    self.params_info = f'X{self.regs[regs[digit]]}'
-        if self.op == 'SMUL' or self.op == 'SADD': 
+                if cell.regs[regs[digit]] == 1 or cell.regs[regs[digit]] == 2:
+                    cell.params_info = f'X{cell.regs[regs[digit]]}'
+        if cell.op == 'SMUL' or cell.op == 'SADD': 
             if ext_reg_cnt >= 1:
-                self.params_info = "EXT"
+                cell.params_info = "EXT"
             elif int_reg_cnt == 2 and cst_cnt == 1:
-                self.params_info = "CST" 
+                cell.params_info = "CST" 
             elif int_reg_cnt == 3:
-                self.params_info = "INT"
+                cell.params_info = "INT"
 
-def fetch_operation_value( self, op, latency, type):
-    if type == "power" :  
-        if (op + '_' + self.params_info) in operation_power_mapping:
-            op += '_' + self.params_info
-            if latency in operation_power_mapping[op]:
-                return operation_power_mapping[op][latency]
-            else:
-                return operation_power_mapping[op][self.latency_cc]
+def fetch_operation_value(cell, op, latency, type):
+    def get_value(mapping, op_key, latency):
+        return mapping[op_key].get(latency, mapping[op_key].get(cell.latency_cc, 0))
+    if type == "power":
+        op_key = f"{op}_{cell.params_info}" if (f"{op}_{cell.params_info}") in operation_power_mapping else op
+        if op_key in operation_power_mapping:
+            return get_value(operation_power_mapping, op_key, latency)    
+    elif type == "passive":
+        op_key = f"{op}_{cell.params_info}" if cell.params_info else op
+        if op_key in operation_passive_power_mapping:
+            return get_value(operation_passive_power_mapping, op_key, latency)
         else:
-            if latency in operation_power_mapping[op]:
-                return operation_power_mapping[op][latency]  
-            else:
-                return operation_power_mapping[op][1]           
-    elif type == "passive" : 
-        if (self.params_info):
-            op += '_' + self.params_info           
-        if op in operation_passive_power_mapping:               
-            if latency in operation_passive_power_mapping[op]:       
-                return operation_passive_power_mapping[op][latency] 
-            else:
-                if 1 in operation_passive_power_mapping[op]:
-                    return operation_passive_power_mapping[op][1]  
-                else:
-                    return 0
-        else:
-            return 0 
-    if type == "clk" :
-        if latency in operation_clk_gate_mapping[op]:
-            return operation_clk_gate_mapping[op][latency]
-        else: return 0
+            return 0    
+    elif type == "clk":
+        return operation_clk_gate_mapping.get(op, {}).get(latency, 0)
+    return 0
 
 def display_characterization(cgra, pr):
     if any(item in pr for item in ["OP_MAX_LAT", "ALL_LAT_INFO"]):

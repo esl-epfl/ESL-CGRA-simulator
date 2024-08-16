@@ -7,7 +7,7 @@ FILENAME_MEM_O  = "memory_out"
 WORD_SIZE   = 4
 
 class MEMORY:
-    def __init__( self,bus_type="INTERLEAVED", spacing=4, n_banks=8, bank_size=32000):
+    def __init__( self,bus_type="ONE-TO-M", spacing=4, n_banks=8, bank_size=32000):
         self.bus_type = bus_type
         self.spacing = spacing
         self.n_banks = n_banks

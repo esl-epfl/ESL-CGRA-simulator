@@ -49,8 +49,8 @@ def print_out( prs, outs, insts, ops, reg, power, energy ):
                 elif    pr == "R1"   : pnt = reg[r][1]
                 elif    pr == "R2"   : pnt = reg[r][2]
                 elif    pr == "R3"   : pnt = reg[r][3]
-                elif    pr == "PWR_OP": pnt = power[r]
-                elif    pr == "EN_OP": pnt = energy[r]
+                elif    pr == "PWR_OP" or "ALL_PWR_EN_INFO": pnt = power[r]
+                elif    pr == "EN_OP" or "ALL_PWR_EN_INFO": pnt = energy[r]
                 if pnt != []:
                     out_string += "["
                 for i in range(len(pnt)):
