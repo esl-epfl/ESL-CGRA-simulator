@@ -7,20 +7,20 @@ FILENAME_MEM_O  = "memory_out"
 WORD_SIZE   = 4
 
 class MEMORY:
-    def __init__( self,bus_type="ONE-TO-M", spacing=4, n_banks=8, bank_size=32000):
+    def __init__( self,bus_type="ONE-TO-M", word_size_B=4, banks_n=8, bank_size_B=32000):
         self.bus_type = bus_type
-        self.spacing = spacing
-        self.n_banks = n_banks
-        self.bank_size = bank_size
+        self.word_size_B = word_size_B
+        self.banks_n = banks_n
+        self.bank_size_B = bank_size_B
         self.flag_poll_cnt = 0
 
-def kernel_clear_memory( name, version=""):
+def clear_memory( name, version=""):
         import csv
         filedir     = "./"+name+"/"
         with open(filedir + FILENAME_MEM + version + EXT,"w+",  newline='') as f:
             csv.writer(f).writerow(["Address", "Data"])
 
-def kernel_add_memory_region( name, start, vals, version=""):
+def add_memory_region( name, start, vals, version=""):
     import csv
     mem     = []
     region  = []

@@ -66,7 +66,7 @@ def get_latency_mem_cc(cgra):
     record_bank_access(cgra)
     cgra.concurrent_accesses = group_dma_accesses(cgra)
     dependencies = track_dependencies(cgra)
-    latency_cc = compute_latency_cc(cgra, dependencies)
+    latency_cc = get_total_memory_access_cc(cgra, dependencies)
     return latency_cc
 
 # Record the bank index used for each memory access 
@@ -80,9 +80,11 @@ def compute_bank_index(cgra, r, c):
     if (cgra.memory):
         base_addr = cgra.init_store[0] if cgra.cells[r][c].op == "SWD" else sorted(cgra.memory)[0][0]  
     if cgra.memory_manager.bus_type == "INTERLEAVED":
-        index_pos = int(((cgra.cells[r][c].addr - base_addr) / cgra.memory_manager.spacing) % cgra.memory_manager.n_banks)
+        index_pos = int(((cgra.cells[r][c].addr - base_addr) / cgra.memory_manager.word_size_B) % cgra.memory_manager.banks_n)
+    elif cgra.memory_manager.bus_type == "N-TO-M":
+        index_pos = cgra.cells[r][c].addr / cgra.memory_manager.bank_size_B
     else:
-        index_pos = cgra.cells[r][c].addr / cgra.memory_manager.bank_size
+        index_pos = 1
     return index_pos
 
 def group_dma_accesses(cgra):
@@ -155,7 +157,7 @@ def find_position(conflict_pos, column):
                 return pairs[1].index(pair)
     return 0
 
-def compute_latency_cc(cgra, dependencies):
+def get_total_memory_access_cc(cgra, dependencies):
     # Account for additional bus type specific delays
     ACTIVE_ROW_COEF =  bus_type_active_row_coef[cgra.memory_manager.bus_type]
     CPU_LOOP_INSTRS =  bus_type_cpu_loop_instrs[cgra.memory_manager.bus_type]
