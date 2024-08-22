@@ -9,6 +9,8 @@ BUS_TYPES = ["ONE-TO-M", "N-TO-M", "INTERLEAVED"]
 IDENTICAL_INSTR_CST = 25
 CLK_PERIOD  = 12.5E-09 # 12.5 ns 
 INTERVAL_CST = 14
+DEAD_TIME_CONSUMPTION_W = 8.15E-05
+DEAD_TIME_LATENCY_CC = 110
 
 def load_operation_characterization(characterization_type, mapping_file='operation_characterization.csv'):
     operation_mapping = {}
@@ -23,7 +25,7 @@ def load_operation_characterization(characterization_type, mapping_file='operati
             if current_section == f'operation_{characterization_type}_mapping':
                 operation, *rest = row         
                 if len(rest) == 1:
-                    key = int(rest[0])
+                    key = float(rest[0])
                     operation_mapping[operation] = key
                 elif len(rest) == 2:
                     key = int(rest[0])
@@ -39,6 +41,7 @@ bus_type_cpu_loop_instrs = load_operation_characterization("cpu_loop_instrs")
 operation_power_mapping = load_operation_characterization("power_w")
 operation_passive_power_mapping = load_operation_characterization("passive_power_w")
 operation_clk_gate_mapping = load_operation_characterization("clk_gate_power_w")
+operation_reconfig_power_mapping = load_operation_characterization("reconfig_power_w")
 
 # This function takes the maximum latency between the memory operations and the non-memory operations in the instruction
 def get_latency_cc(cgra):
@@ -166,15 +169,18 @@ def get_total_memory_access_cc(cgra, dependencies):
     for r in range(cgra.N_ROWS):
         for c in range(cgra.N_COLS):                
             if cgra.cells[r][c].op in OPERATIONS_MEMORY_ACCESS:      
-                mem_count[c] += 1
+                mem_count[r] += 1
     if ACTIVE_ROW_COEF:
         for i in range (cgra.N_ROWS):
             if mem_count[i] != 0:
                 latency_cc += ACTIVE_ROW_COEF
+                if CPU_LOOP_INSTRS:
+                    cgra.flag_poll_cnt += ACTIVE_ROW_COEF
+                    if cgra.flag_poll_cnt % (CPU_LOOP_INSTRS - 1) == 0:
+                        latency_cc += 1
     if CPU_LOOP_INSTRS:
-        cgra.flag_poll_cnt += latency_cc
-        if cgra.flag_poll_cnt % (CPU_LOOP_INSTRS - 1) == 0:
-            latency_cc += 1  
+        if max(mem_count) == 0:
+            cgra.flag_poll_cnt += latency_cc
     return latency_cc
 
 def get_power_w(cgra):
@@ -182,13 +188,17 @@ def get_power_w(cgra):
     cgra.energy.append([[0 for _ in range(cgra.N_COLS)] for _ in range(cgra.N_ROWS)])
     for r in range(cgra.N_ROWS):
         for c in range(cgra.N_COLS):
-            get_cell_power_w(cgra.cells[r][c], cgra.max_latency_instr.latency_cc)              
+            get_cell_power_w(cgra.cells[r][c], cgra.max_latency_instr.latency_cc)            
             cgra.power[-1][r][c] = cgra.cells[r][c].power
             get_cell_energy_j(cgra.cells[r][c], cgra.max_latency_instr.latency_cc)
             cgra.energy[-1][r][c] = cgra.cells[r][c].energy
         if (cgra.cycles > 1):
             if (cgra.power[-1] == cgra.power[-2]): 
                 cgra.identical_instr += 1  
+    for row_idx in range(cgra.N_ROWS):
+        for col_idx in range(cgra.N_COLS):
+            cgra.reconfigs_list[row_idx][col_idx].append((cgra.prev_ops[row_idx][col_idx], cgra.cells[row_idx][col_idx].op))
+            cgra.prev_ops[row_idx][col_idx] = cgra.cells[row_idx][col_idx].op
     if (cgra.exit):
         cgra.avg_pwr_array = [[0 for _ in range(cgra.N_COLS)] for _ in range(cgra.N_ROWS)]
         cgra.energy_array = [[0 for _ in range(cgra.N_COLS)] for _ in range(cgra.N_ROWS)]
@@ -197,27 +207,33 @@ def get_power_w(cgra):
                 for col_idx in range(cgra.N_COLS):
                     cgra.avg_pwr_array[row_idx][col_idx] += (cgra.power[index][row_idx][col_idx] * item.latency_cc)
                     cgra.energy_array[row_idx][col_idx] += cgra.energy[index][row_idx][col_idx]
-        cgra.avg_pwr_array = [[value / cgra.total_latency_cc for value in row] for row in cgra.avg_pwr_array]
+        cgra.avg_pwr_array = [[value / cgra.total_latency_cc for value in row] for row in cgra.avg_pwr_array]    
+        if cgra.cycles > 30:
+            for row_idx in range(cgra.N_ROWS):
+                for col_idx in range(cgra.N_COLS):
+                    for elem in cgra.reconfigs_list[row_idx][col_idx]:
+                        key = f'{elem[1]}-{elem[1]}' if elem[0] == 0 else f'{elem[0]}-{elem[1]}'
+                        cgra.avg_pwr_array[row_idx][col_idx] += operation_reconfig_power_mapping.get(key, 0)
         cgra.avg_pwr = sum([power for row in cgra.avg_pwr_array for power in row])
         cgra.avg_energy = sum([energy for row in cgra.energy_array for energy in row])
-        if cgra.identical_instr < IDENTICAL_INSTR_CST:
-            cgra.avg_pwr += 1.00E-4
+        # Adjust energy to remove dead time consumption
+        cgra.avg_energy -= DEAD_TIME_CONSUMPTION_W * DEAD_TIME_LATENCY_CC 
 
 def get_cell_power_w(cell, latency):  
     if cell.op in operation_power_mapping:
         if cell.op in cell.ops_arith:
-            handle_alu(cell)            
-        average_pwr = fetch_operation_value(cell, cell.op, latency, "power")
-        active_pwr = fetch_operation_value(cell, cell.op, cell.latency_cc, "power")
+            handle_alu(cell)           
+        average_pwr = fetch_operation_value(cell, "power", cell.op, latency)
+        active_pwr = fetch_operation_value(cell, "power", cell.op, cell.latency_cc)
         cell.power = average_pwr
-        if (fetch_operation_value(cell, cell.op,latency, "passive") != 0 ):             
+        if (fetch_operation_value(cell, "passive", cell.op,latency) != 0 ):             
             cell.active_energy = active_pwr * cell.latency_cc 
-            cell.passive_energy = fetch_operation_value(cell, cell.op,latency, "passive") * ( latency - cell.latency_cc)
+            cell.passive_energy = fetch_operation_value(cell, "passive", cell.op,latency) * ( latency - cell.latency_cc)
             cell.power = (cell.active_energy + cell.passive_energy) / latency      
         if cell.op == 'NOP' or cell.op == 'EXIT':
-            cell.power += fetch_operation_value(cell, "CLK_IDLE", latency, "clk") 
+            cell.power += fetch_operation_value(cell, "clk", "CLK_IDLE", latency) 
         else:
-            cell.power += fetch_operation_value(cell, "CLK_ACTIVE", latency, "clk") 
+            cell.power += fetch_operation_value(cell, "clk", "CLK_ACTIVE", latency) 
 
 def get_cell_energy_j(cell, latency):  
     if cell.op in operation_power_mapping:
@@ -248,7 +264,7 @@ def handle_alu(cell):
             elif int_reg_cnt == 3:
                 cell.params_info = "INT"
 
-def fetch_operation_value(cell, op, latency, type):
+def fetch_operation_value(cell, type, op=None, latency=None ):
     def get_value(mapping, op_key, latency):
         return mapping[op_key].get(latency, mapping[op_key].get(cell.latency_cc, 0))
     if type == "power":
@@ -290,5 +306,5 @@ def display_characterization(cgra, pr):
     if any(item in pr for item in ["AVG_INSTR_PWR_INFO", "ALL_PWR_EN_INFO"]):
         print("\nPower estimation for all instructions:", format(cgra.avg_pwr, ".2e"), " W")
     if any(item in pr for item in ["AVG_INSTR_EN_INFO", "ALL_PWR_EN_INFO"]):
-        print("\nTotal energy consumed:", format(cgra.avg_energy * CLK_PERIOD, ".2e"), "J")
+        print("\nTotal energy consumed during execution:", format(cgra.avg_energy * CLK_PERIOD, ".2e"), "J")
         print("\nClock period used:", CLK_PERIOD, "s")

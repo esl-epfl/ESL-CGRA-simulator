@@ -49,8 +49,8 @@ def print_out( prs, outs, insts, ops, reg, power, energy ):
                 elif    pr == "R1"   : pnt = reg[r][1]
                 elif    pr == "R2"   : pnt = reg[r][2]
                 elif    pr == "R3"   : pnt = reg[r][3]
-                elif    pr == "PWR_OP" or "ALL_PWR_EN_INFO": pnt = power[r]
-                elif    pr == "EN_OP" or "ALL_PWR_EN_INFO": pnt = energy[r]
+                elif    pr == "PWR_OP" or pr == "ALL_PWR_EN_INFO": pnt = power[r]
+                elif    pr == "EN_OP" or pr == "ALL_PWR_EN_INFO": pnt = energy[r]
                 if pnt != []:
                     out_string += "["
                 for i in range(len(pnt)):
@@ -93,6 +93,12 @@ class CGRA:
         self.max_latency_instr = None
         self.total_latency_cc = 0
         self.instr_latency_cc = []
+        self.prev_ops = [[0 for _ in range(N_COLS)] for _ in range(N_ROWS)]
+        self.reconfigs_list = [[[] for _ in range(N_COLS)] for _ in range(N_ROWS)]
+        self.patterns_list = [[[] for _ in range(N_COLS)] for _ in range(N_ROWS)]
+        self.loop_len_1 = []
+        self.loop_len_2 = []
+
         
         if read_addrs is not None and len(read_addrs) == N_COLS:
             self.load_addr = read_addrs
