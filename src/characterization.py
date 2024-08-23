@@ -6,7 +6,6 @@ import re
 
 OPERATIONS_MEMORY_ACCESS = ["LWD", "LWI", "SWD","SWI"]
 BUS_TYPES = ["ONE-TO-M", "N-TO-M", "INTERLEAVED"]
-IDENTICAL_INSTR_CST = 25
 CLK_PERIOD  = 12.5E-09 # 12.5 ns 
 INTERVAL_CST = 14
 DEAD_TIME_CONSUMPTION_W = 8.15E-05
@@ -188,56 +187,29 @@ def get_power_w(cgra):
     cgra.energy.append([[0 for _ in range(cgra.N_COLS)] for _ in range(cgra.N_ROWS)])
     for r in range(cgra.N_ROWS):
         for c in range(cgra.N_COLS):
-            get_cell_power_w(cgra.cells[r][c], cgra.max_latency_instr.latency_cc)            
+            get_cell_power_w(cgra.cells[r][c], cgra.max_latency_instr.latency_cc)      
             cgra.power[-1][r][c] = cgra.cells[r][c].power
-            get_cell_energy_j(cgra.cells[r][c], cgra.max_latency_instr.latency_cc)
+            get_cell_reconfig_w(cgra, r, c)
+            get_cell_energy_j(cgra.cells[r][c], cgra.max_latency_instr.latency_cc, cgra.reconfig_consumption_w[r][c])
             cgra.energy[-1][r][c] = cgra.cells[r][c].energy
-        if (cgra.cycles > 1):
-            if (cgra.power[-1] == cgra.power[-2]): 
-                cgra.identical_instr += 1  
-    for row_idx in range(cgra.N_ROWS):
-        for col_idx in range(cgra.N_COLS):
-            cgra.reconfigs_list[row_idx][col_idx].append((cgra.prev_ops[row_idx][col_idx], cgra.cells[row_idx][col_idx].op))
-            cgra.prev_ops[row_idx][col_idx] = cgra.cells[row_idx][col_idx].op
     if (cgra.exit):
-        cgra.avg_pwr_array = [[0 for _ in range(cgra.N_COLS)] for _ in range(cgra.N_ROWS)]
-        cgra.energy_array = [[0 for _ in range(cgra.N_COLS)] for _ in range(cgra.N_ROWS)]
-        for index, item in enumerate(cgra.instr_latency_cc):     
-            for row_idx in range(cgra.N_ROWS):
-                for col_idx in range(cgra.N_COLS):
-                    cgra.avg_pwr_array[row_idx][col_idx] += (cgra.power[index][row_idx][col_idx] * item.latency_cc)
-                    cgra.energy_array[row_idx][col_idx] += cgra.energy[index][row_idx][col_idx]
-        cgra.avg_pwr_array = [[value / cgra.total_latency_cc for value in row] for row in cgra.avg_pwr_array]    
-        if cgra.cycles > 30:
-            for row_idx in range(cgra.N_ROWS):
-                for col_idx in range(cgra.N_COLS):
-                    for elem in cgra.reconfigs_list[row_idx][col_idx]:
-                        key = f'{elem[1]}-{elem[1]}' if elem[0] == 0 else f'{elem[0]}-{elem[1]}'
-                        cgra.avg_pwr_array[row_idx][col_idx] += operation_reconfig_power_mapping.get(key, 0)
-        cgra.avg_pwr = sum([power for row in cgra.avg_pwr_array for power in row])
-        cgra.avg_energy = sum([energy for row in cgra.energy_array for energy in row])
-        # Adjust energy to remove dead time consumption
-        cgra.avg_energy -= DEAD_TIME_CONSUMPTION_W * DEAD_TIME_LATENCY_CC 
+        process_final_pwr_en_results(cgra)
 
-def get_cell_power_w(cell, latency):  
+def get_cell_power_w(cell, latency):
     if cell.op in operation_power_mapping:
         if cell.op in cell.ops_arith:
-            handle_alu(cell)           
+            handle_alu(cell)
         average_pwr = fetch_operation_value(cell, "power", cell.op, latency)
         active_pwr = fetch_operation_value(cell, "power", cell.op, cell.latency_cc)
         cell.power = average_pwr
-        if (fetch_operation_value(cell, "passive", cell.op,latency) != 0 ):             
-            cell.active_energy = active_pwr * cell.latency_cc 
+        if (fetch_operation_value(cell, "passive", cell.op,latency) != 0 ):
+            cell.active_energy = active_pwr * cell.latency_cc
             cell.passive_energy = fetch_operation_value(cell, "passive", cell.op,latency) * ( latency - cell.latency_cc)
-            cell.power = (cell.active_energy + cell.passive_energy) / latency      
+            cell.power = (cell.active_energy + cell.passive_energy) / latency
         if cell.op == 'NOP' or cell.op == 'EXIT':
-            cell.power += fetch_operation_value(cell, "clk", "CLK_IDLE", latency) 
+            cell.power += fetch_operation_value(cell, "clk", "CLK_IDLE", latency)
         else:
-            cell.power += fetch_operation_value(cell, "clk", "CLK_ACTIVE", latency) 
-
-def get_cell_energy_j(cell, latency):  
-    if cell.op in operation_power_mapping:
-        cell.energy = cell.power * latency
+            cell.power += fetch_operation_value(cell, "clk", "CLK_ACTIVE", latency)
 
 def handle_alu(cell):
         from cgra import regs
@@ -251,7 +223,7 @@ def handle_alu(cell):
         cst_cnt = len(pattern_numeric.findall(matches_str))
         if cell.out == 0:
             cell.params_info = "X0"
-        if cell.op == 'SMUL' or cell.op == 'FXPMUL': 
+        if cell.op == 'SMUL' or cell.op == 'FXPMUL':
             for match in pattern_r_digit.findall(cell.op[1:]):
                 digit = int(match[1])
                 if cell.regs[regs[digit]] == 1 or cell.regs[regs[digit]] == 2:
@@ -276,12 +248,39 @@ def fetch_operation_value(cell, type, op=None, latency=None ):
         if op_key in operation_passive_power_mapping:
             return get_value(operation_passive_power_mapping, op_key, latency)
         else:
-            return 0    
+            return 0
     elif type == "clk":
         return operation_clk_gate_mapping.get(op, {}).get(latency, 0)
     return 0
 
+def get_cell_reconfig_w(cgra, r, c):
+    current_reconfig = tuple(sorted((cgra.prev_ops[r][c], cgra.cells[r][c].op)))
+    cgra.prev_ops[r][c] = cgra.cells[r][c].op
+    key = f'{current_reconfig[1]}-{current_reconfig[1]}' if current_reconfig[0] == "" else f'{current_reconfig[0]}-{current_reconfig[1]}'
+    cgra.reconfig_consumption_w[r][c] += operation_reconfig_power_mapping.get(key, 0)
+
+def get_cell_energy_j(cell, latency, reconfig_consumption_w):
+    cell.energy = (cell.power + reconfig_consumption_w) * latency
+
+def process_final_pwr_en_results(cgra):
+    cgra.avg_power_array = [[0 for _ in range(cgra.N_COLS)] for _ in range(cgra.N_ROWS)]
+    cgra.energy_array = [[0 for _ in range(cgra.N_COLS)] for _ in range(cgra.N_ROWS)]
+    for index, item in enumerate(cgra.instr_latency_cc):  
+        for row_idx in range(cgra.N_ROWS):
+            for col_idx in range(cgra.N_COLS):
+                cgra.avg_power_array[row_idx][col_idx] += (cgra.power[index][row_idx][col_idx] * item.latency_cc)
+                cgra.energy_array[row_idx][col_idx] += cgra.energy[index][row_idx][col_idx]
+    cgra.avg_power_array = [[value / cgra.total_latency_cc for value in row] for row in cgra.avg_power_array]
+    for row_idx in range(cgra.N_ROWS):
+        for col_idx in range(cgra.N_COLS):
+            cgra.avg_power_array[row_idx][col_idx] += cgra.reconfig_consumption_w[row_idx][col_idx]
+    cgra.total_pwr = sum([power for row in cgra.avg_power_array for power in row])
+    cgra.avg_energy = sum([energy for row in cgra.energy_array for energy in row])
+    # Adjust energy to remove dead time consumption
+    cgra.avg_energy -= DEAD_TIME_CONSUMPTION_W * DEAD_TIME_LATENCY_CC
+
 def display_characterization(cgra, pr):
+    from cgra import print_out
     if any(item in pr for item in ["OP_MAX_LAT", "ALL_LAT_INFO"]):
         print("\nLongest instructions per cycle:\n")
         print("{:<8} {:<25} {:<10}".format("Cycle", "Instruction", "Latency (CC)"))
@@ -292,19 +291,9 @@ def display_characterization(cgra, pr):
         print(f'\nConfiguration time: {len(cgra.instrs)} CC\nTime between end of configuration and start of first iteration: {math.ceil(14 + (len(cgra.instrs) * 3))} CC\nTotal time for all instructions: {cgra.total_latency_cc}') 
     if any(item in pr for item in ["AVG_OP_PWR_INFO", "ALL_PWR_EN_INFO"]):
         print("\nAverage power per operation:\n")
-        out_string = ""
-        for r in range(cgra.N_ROWS):
-            out_string += "["
-            for i in range(len(cgra.avg_pwr_array[r])):
-                out_string += "{{{}:.2e}}".format(i)
-                if i == (len(cgra.avg_pwr_array[r]) - 1):
-                    out_string += "]\n"
-                else:
-                    out_string += ", "
-            out_string = out_string.format(*[o for o in cgra.avg_pwr_array[r]])
-        print(out_string)
+        print_out("PWR_OP", None, None, None, None, cgra.avg_power_array, None)
     if any(item in pr for item in ["AVG_INSTR_PWR_INFO", "ALL_PWR_EN_INFO"]):
-        print("\nPower estimation for all instructions:", format(cgra.avg_pwr, ".2e"), " W")
+        print("\nPower estimation for all instructions:", format(cgra.total_pwr, ".2e"), " W")
     if any(item in pr for item in ["AVG_INSTR_EN_INFO", "ALL_PWR_EN_INFO"]):
         print("\nTotal energy consumed during execution:", format(cgra.avg_energy * CLK_PERIOD, ".2e"), "J")
         print("\nClock period used:", CLK_PERIOD, "s")

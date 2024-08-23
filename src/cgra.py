@@ -64,14 +64,15 @@ def print_out( prs, outs, insts, ops, reg, power, energy ):
                         out_string += ", "
                 out_string = out_string.format(*[o for o in pnt])
             print(out_string)
-    flattened_power = [power for row in power for power in row]
-    flattened_energy = [energy for row in energy for energy in row]
-    pwr_en_output = []
-    if any(item in prs for item in ["PWR_OP", "ALL_PWR_EN_INFO"]):
-        pwr_en_output.append(f'Power: {format(sum(flattened_power), ".2e")} W')
-    if any(item in prs for item in ["EN_OP", "ALL_PWR_EN_INFO"]):
-        pwr_en_output.append(f'Energy: {format(sum(flattened_energy), ".2e")} J')
-    if pwr_en_output: print(', '.join(pwr_en_output))
+    if (power and energy):
+        flattened_power = [power for row in power for power in row]
+        flattened_energy = [energy for row in energy for energy in row]
+        pwr_en_output = []
+        if any(item in prs for item in ["PWR_OP", "ALL_PWR_EN_INFO"]):
+            pwr_en_output.append(f'Power: {format(sum(flattened_power), ".2e")} W')
+        if any(item in prs for item in ["EN_OP", "ALL_PWR_EN_INFO"]):
+            pwr_en_output.append(f'Energy: {format(sum(flattened_energy), ".2e")} J')
+        if pwr_en_output: print(', '.join(pwr_en_output))
 
 class CGRA:
     def __init__( self, kernel, memory, read_addrs, write_addrs, memory_manager):
@@ -93,12 +94,8 @@ class CGRA:
         self.max_latency_instr = None
         self.total_latency_cc = 0
         self.instr_latency_cc = []
-        self.prev_ops = [[0 for _ in range(N_COLS)] for _ in range(N_ROWS)]
-        self.reconfigs_list = [[[] for _ in range(N_COLS)] for _ in range(N_ROWS)]
-        self.patterns_list = [[[] for _ in range(N_COLS)] for _ in range(N_ROWS)]
-        self.loop_len_1 = []
-        self.loop_len_2 = []
-
+        self.prev_ops = [["" for _ in range(N_COLS)] for _ in range(N_ROWS)]
+        self.reconfig_consumption_w = [[0 for _ in range(N_COLS)] for _ in range(N_ROWS)]
         
         if read_addrs is not None and len(read_addrs) == N_COLS:
             self.load_addr = read_addrs
