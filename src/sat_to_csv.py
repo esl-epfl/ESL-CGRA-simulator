@@ -1,6 +1,6 @@
 import math
 import csv
-import re
+
 ## Convert the output of SAT-MapIt into a csv file compatible with the simulator
 def convert(infile, outfile, version=""):
 
@@ -63,37 +63,3 @@ def convert(infile, outfile, version=""):
             for r in rows:
                 writer.writerow(r)
 
-def convert_sat_to_csv(sat_filepath, csv_filepath):
-    with open(sat_filepath, 'r') as f:
-        sat_lines = f.readlines()
-
-    csv_rows = []
-    current_instructions = []
-    timestamp = None
-
-    for line in sat_lines:
-        line = line.strip()
-        if re.match(r"T = \d+", line):
-            if timestamp is not None:
-                while current_instructions:
-                    csv_rows.append(current_instructions[:4])
-                    current_instructions = current_instructions[4:]
-            timestamp = line[4:]
-            csv_rows.append([timestamp, '', '', ''])
-            current_instructions = []
-        else:
-            current_instructions.append(line)
-
-    if current_instructions:
-        while current_instructions:
-            csv_rows.append(current_instructions[:4])
-            current_instructions = current_instructions[4:]
-
-    if csv_rows and csv_rows[-1] == ['0', '', '', '']:
-        csv_rows.pop()
-        
-    # Write the result to a CSV file
-    with open(csv_filepath, 'w', newline='') as csvfile:
-        writer = csv.writer(csvfile)
-        for row in csv_rows:
-            writer.writerow(row + [''] * (4 - len(row)))
