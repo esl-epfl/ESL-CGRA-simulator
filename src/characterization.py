@@ -93,7 +93,7 @@ def group_dma_accesses(cgra):
     # For each row, scan the PEs for memory accesses and place them into concurrent_accesses
     # If a column has no memory access, then scan all the rows on that column (=push up) 
     cgra.covered_accesses = []
-    concurrent_accesses = [{} for _ in range(4)]
+    concurrent_accesses = [{} for _ in range(cgra.N_ROWS)]
     for r in range(cgra.N_ROWS):
         for c in range(cgra.N_COLS):  
             if cgra.cells[r][c].op in OPERATIONS_MEMORY_ACCESS and (r, c) not in cgra.covered_accesses:
@@ -117,7 +117,7 @@ def accesses_are_ordered(cgra, concurrent_accesses):
     if (cgra.memory_manager.bus_type != "INTERLEAVED"):
         return False
     else:
-        highest_row = [0] * 4
+        highest_row = [0] * cgra.N_ROWS
         for i in range (cgra.N_ROWS):
             for values in concurrent_accesses[i].values():
                 for current_access in values:
@@ -140,7 +140,7 @@ def rearrange_accesses(cgra, concurrent_accesses) :
     return concurrent_accesses
 
 def track_dependencies(cgra): 
-    latency = [1] * 4 
+    latency = [1] * cgra.N_COLS 
     # Iterate over each sequence (= flattened row), examining them two-by-two:
     for i in range (cgra.N_ROWS):
         for values in cgra.concurrent_accesses[i].values():
@@ -288,7 +288,7 @@ def display_characterization(cgra, pr):
             print("{:<2} {:<6} {:<25} {:<10}".format(index + 1, f'({item.instr2exec})', item.instr, item.latency_cc))
     if any(item in pr for item in ["TOTAL_LAT", "ALL_LAT_INFO"]):
         cgra.interval_latency = math.ceil(INTERVAL_CST + (len(cgra.instrs) * 3))
-        print(f'\nConfiguration time: {len(cgra.instrs)} CC\nTime between end of configuration and start of first iteration: {math.ceil(14 + (len(cgra.instrs) * 3))} CC\nTotal time for all instructions: {cgra.total_latency_cc}') 
+        print(f'\nConfiguration time: {len(cgra.instrs)} CC\nTime between end of configuration and start of first iteration: {math.ceil(14 + (len(cgra.instrs) * 3))} CC\nTotal time for all instructions: {cgra.total_latency_cc} CC') 
     if any(item in pr for item in ["AVG_OP_PWR_INFO", "ALL_PWR_EN_INFO"]):
         print("\nAverage power per operation:\n")
         print_out("PWR_OP", None, None, None, None, cgra.avg_power_array, None)
