@@ -60,7 +60,7 @@ def get_latency_mem_cc(cgra):
     record_bank_access(cgra)
     cgra.concurrent_accesses = group_dma_accesses(cgra)
     dependencies = track_dependencies(cgra)
-    latency_cc = compute_latency_cc(cgra, dependencies)
+    latency_cc = get_total_memory_access_cc(cgra, dependencies)
     return latency_cc
 
 # Record the bank index used for each memory access 
@@ -71,18 +71,21 @@ def record_bank_access(cgra):
                 cgra.cells[r][c].bank_index = compute_bank_index(cgra,r,c)
 
 def compute_bank_index(cgra, r, c):
-    base_addr = cgra.init_store[0] if cgra.cells[r][c].op == "SWD" else sorted(cgra.memory)[0][0]  
+    if (cgra.memory):
+        base_addr = cgra.init_store[0] if cgra.cells[r][c].op == "SWD" else sorted(cgra.memory)[0][0]  
     if cgra.memory_manager.bus_type == "INTERLEAVED":
-        index_pos = int(((cgra.cells[r][c].addr - base_addr) / cgra.memory_manager.spacing) % cgra.memory_manager.n_banks)
+        index_pos = int(((cgra.cells[r][c].addr - base_addr) / cgra.memory_manager.word_size_B) % cgra.memory_manager.banks_n)
+    elif cgra.memory_manager.bus_type == "N-TO-M":
+        index_pos = cgra.cells[r][c].addr / cgra.memory_manager.bank_size_B
     else:
-        index_pos = cgra.cells[r][c].addr / cgra.memory_manager.bank_size
+        index_pos = 1
     return index_pos
 
 def group_dma_accesses(cgra):
     # For each row, scan the PEs for memory accesses and place them into concurrent_accesses
     # If a column has no memory access, then scan all the rows on that column (=push up) 
     cgra.covered_accesses = []
-    concurrent_accesses = [{} for _ in range(4)]
+    concurrent_accesses = [{} for _ in range(cgra.N_ROWS)]
     for r in range(cgra.N_ROWS):
         for c in range(cgra.N_COLS):  
             if cgra.cells[r][c].op in OPERATIONS_MEMORY_ACCESS and (r, c) not in cgra.covered_accesses:
@@ -106,7 +109,7 @@ def accesses_are_ordered(cgra, concurrent_accesses):
     if (cgra.memory_manager.bus_type != "INTERLEAVED"):
         return False
     else:
-        highest_row = [0] * 4
+        highest_row = [0] * cgra.N_ROWS
         for i in range (cgra.N_ROWS):
             for values in concurrent_accesses[i].values():
                 for current_access in values:
@@ -128,7 +131,8 @@ def rearrange_accesses(cgra, concurrent_accesses):
     return concurrent_accesses
 
 def track_dependencies(cgra):
-    latency = [1] * 4 
+    latency = [1] * cgra.N_COLS
+    # Iterate over each sequence (= flattened row), examining them two-by-two:
     for i in range (cgra.N_ROWS):
         for values in cgra.concurrent_accesses[i].values():
             for current_access in values:
@@ -146,7 +150,7 @@ def find_position(conflict_pos, column):
                 return pairs[1].index(pair)
     return 0
 
-def compute_latency_cc(cgra, dependencies):
+def get_total_memory_access_cc(cgra, dependencies):
     # Account for additional bus type specific delays
     ACTIVE_ROW_COEF =  bus_type_active_row_coef[cgra.memory_manager.bus_type]
     CPU_LOOP_INSTRS =  bus_type_cpu_loop_instrs[cgra.memory_manager.bus_type]
@@ -155,15 +159,18 @@ def compute_latency_cc(cgra, dependencies):
     for r in range(cgra.N_ROWS):
         for c in range(cgra.N_COLS):                
             if cgra.cells[r][c].op in OPERATIONS_MEMORY_ACCESS:      
-                mem_count[c] += 1
+                mem_count[r] += 1
     if ACTIVE_ROW_COEF:
         for i in range (cgra.N_ROWS):
             if mem_count[i] != 0:
                 latency_cc += ACTIVE_ROW_COEF
+                if CPU_LOOP_INSTRS:
+                    cgra.flag_poll_cnt += ACTIVE_ROW_COEF
+                    if cgra.flag_poll_cnt % (CPU_LOOP_INSTRS - 1) == 0:
+                        latency_cc += 1
     if CPU_LOOP_INSTRS:
-        cgra.flag_poll_cnt += latency_cc
-        if cgra.flag_poll_cnt % (CPU_LOOP_INSTRS - 1) == 0:
-            latency_cc += 1  
+        if max(mem_count) == 0:
+            cgra.flag_poll_cnt += latency_cc
     return latency_cc
 
 def display_characterization(cgra, pr):

@@ -15,7 +15,7 @@ Each kernel has a folder with its name. All the files needed to run a simulation
 * (optional) A hand-written assembly file.
 * (optional) A `memory.csv` file including the indexed values that the kernel can access from memory.
 
-    You can either write this file by hand or fill the memory using the `kernel_add_memory_region` function.
+    You can either write this file by hand or fill the memory using the `add_memory_region` function.
 * A `instructions.csv` file containing a matrix of operations to be executed by each Processing Element (PE) during each instruction.
 
     This file can be automatically generated from a `.out` file or hand-written assembly.
@@ -42,7 +42,7 @@ kernel_new("<kernel_name>")
 ### Memory
 The memory can be easily populated with some patter by calling the function
 ```python
-kernel_add_memory_region( "<kernel_name>", <address>, <array_of_values>, [<version>])
+add_memory_region( "<kernel_name>", <address>, <array_of_values>, [<version>])
 ```
 
 The `memory.csv` file should always have this format

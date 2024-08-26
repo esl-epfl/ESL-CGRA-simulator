@@ -401,7 +401,7 @@ def run( kernel, version="", pr="ROUT", limit=100, load_addrs=None, store_addrs=
 
    # Create an empty memory file if there is not any
     if not os.path.isfile(kernel + "/"+FILENAME_MEM+version+EXT):
-        kernel_clear_memory(kernel, version)
+        clear_memory(kernel, version)
 
     # Read the memory file
     with open( kernel + "/"+FILENAME_MEM+version+EXT, 'r') as f:
