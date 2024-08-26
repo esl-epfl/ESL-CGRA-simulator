@@ -90,7 +90,6 @@ class CGRA:
         self.N_ROWS     = N_ROWS  
         self.power      = []
         self.energy     = []
-        self.identical_instr = 0
         self.max_latency_instr = None
         self.total_latency_cc = 0
         self.instr_latency_cc = []
