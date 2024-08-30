@@ -4,7 +4,7 @@ The simulator features an estimation tool that provides latency results for each
 To do so, an algorithm returns the maximum value between the longest ALU (non-memory) operation and the total latency due to memory accesses.
 
 ### Instruction-level breakdown
-* ALU operation latencies are straightforward to compute, as they all take 1 CC to execute, with the exception of multiplications (SMUL and FXPMUL) which take 3 CCs. 
+* ALU operation latencies are straightforward to compute, as they all take 1 CC to execute, with the exception of multiplications (SMUL and FXPMUL) which take 3 CCs.
 * To compute the total latency of the memory operations (LWD, SWD, LWI, and SWI), the simulator must consider the bus type (default: one-to-M).
 * In the case where the instruction contains an “EXIT” operation, 1 CC is added to the final latency.
 ### Printing results
