@@ -278,7 +278,7 @@ class PE:
         elif self.op in self.ops_jump:
             val1    = self.fetch_val( instr[1] )
             val2    = self.fetch_val( instr[2] )
-            self.flags['branch'] = val1 + val2
+            self.flags['branch'] = val2 #Val1 is ignored in the CGRA
 
         elif self.op in self.ops_exit:
             self.flags['exit'] = 1
