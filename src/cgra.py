@@ -1,9 +1,11 @@
+import copy
 import numpy as np
 from ctypes import c_int32
 import csv
 import os.path
-
+from characterization import display_characterization, get_latency_cc
 from kernels import *
+from memory import *
 
 # CGRA from left to right, top to bottom
 N_ROWS      = 4
@@ -11,7 +13,7 @@ N_COLS      = 4
 INSTR_SIZE  = N_ROWS+1
 MAX_COL     = N_COLS - 1
 MAX_ROW     = N_ROWS - 1
-
+BUS_TYPES = ["ONE-TO-M", "N-TO-M", "INTERLEAVED"]
 PRINT_OUTS  = 1
 
 MAX_32b = 0xFFFFFFFF
@@ -47,8 +49,8 @@ def print_out( prs, outs, insts, ops, reg ):
             elif    pr == "R1"   : pnt = reg[1]
             elif    pr == "R2"   : pnt = reg[2]
             elif    pr == "R3"   : pnt = reg[3]
-
-            out_string += "["
+            if pnt != []:
+                out_string += "["
             for i in range(len(pnt)):
                 out_string += "{{{}:4}}".format(i)
                 if i == (len(pnt) - 1):
@@ -60,7 +62,7 @@ def print_out( prs, outs, insts, ops, reg ):
 
 
 class CGRA:
-    def __init__( self, kernel, memory, read_addrs, write_addrs):
+    def __init__( self, kernel, memory, read_addrs, write_addrs, memory_manager):
         self.cells = []
         for r in range(N_ROWS):
             list = []
@@ -71,6 +73,11 @@ class CGRA:
         self.memory     = memory
         self.instr2exec = 0
         self.cycles     = 0
+        self.N_COLS     = N_COLS
+        self.N_ROWS     = N_ROWS  
+        self.total_latency_cc = 0
+        self.instr_latency_cc = []
+        self.max_latency_instr = None
         if read_addrs is not None and len(read_addrs) == N_COLS:
             self.load_addr = read_addrs
         else:
@@ -79,6 +86,8 @@ class CGRA:
             self.store_addr = write_addrs
         else:
             self.store_addr = [0]*N_COLS
+        self.init_store = copy.copy(self.store_addr)
+        self.memory_manager   = memory_manager
         self.exit       = False
 
     def run( self, pr, limit ):
@@ -109,10 +118,12 @@ class CGRA:
             ops     = [ self.cells[r][i].op         for i in range(N_COLS) ]
             reg     = [[ self.cells[r][i].regs[regs[x]]   for i in range(N_COLS) ] for x in range(len(regs)) ]
             print_out( prs, outs, insts, ops, reg )
-
+        self.flag_poll_cnt = 0
+        get_latency_cc(self)  
         self.instr2exec += 1
         self.cycles += 1
-        return self.exit
+        return self.exit    
+
 
     def get_neighbour_address( self, r, c, dir ):
         n_r = r
@@ -181,6 +192,8 @@ class PE:
         self.regs       = {'R0':0, 'R1':0, 'R2':0, 'R3':0 }
         self.op         = ""
         self.instr      = ""
+        self.latency_cc = 0
+        self.addr       = 0
 
     def get_out( self ):
         return self.old_out
@@ -222,7 +235,6 @@ class PE:
             self.op      = instr[0]
         except:
             self.op = instr
-
         if self.op in self.ops_arith:
             des     = instr[1]
             val1    = self.fetch_val( instr[2] )
@@ -251,25 +263,27 @@ class PE:
 
         elif self.op in self.ops_lwd:
             des = instr[1]
+            self.addr = self.parent.load_addr[self.col]
             ret = self.parent.load_direct( self.col, 4 )
             if des in self.regs: self.regs[des] = ret
             self.out = ret
 
         elif self.op in self.ops_swd:
             val = self.fetch_val( instr[1] )
+            self.addr = self.parent.store_addr[self.col]
             self.parent.store_direct( self.col, val, 4 )
 
         elif self.op in self.ops_lwi:
             des = instr[1]
-            addr = self.fetch_val( instr[2] )
-            ret = self.parent.load_indirect(addr)
+            self.addr = self.fetch_val( instr[2] )
+            ret = self.parent.load_indirect(self.addr)
             if des in self.regs: self.regs[des] = ret
             self.out = ret
 
         elif self.op in self.ops_swi:
-            addr = self.fetch_val( instr[2] )
+            self.addr = self.fetch_val( instr[2] )
             val = self.fetch_val( instr[1] )
-            self.parent.store_indirect( addr, val )
+            self.parent.store_indirect( self.addr, val )
             pass
 
         elif self.op in self.ops_nop:
@@ -375,7 +389,9 @@ class PE:
     ops_jump    = { 'JUMP'      : '' }
     ops_exit    = { 'EXIT'      : '' }
 
-def run( kernel, version="", pr="ROUT", limit=100, load_addrs=None, store_addrs=None):
+
+
+def run( kernel, version="", pr="ROUT", limit=100, load_addrs=None, store_addrs=None, memory_manager=MEMORY()):
     ker = []
     mem = []
 
@@ -385,7 +401,7 @@ def run( kernel, version="", pr="ROUT", limit=100, load_addrs=None, store_addrs=
 
    # Create an empty memory file if there is not any
     if not os.path.isfile(kernel + "/"+FILENAME_MEM+version+EXT):
-        kernel_clear_memory(kernel, version)
+        clear_memory(kernel, version)
 
     # Read the memory file
     with open( kernel + "/"+FILENAME_MEM+version+EXT, 'r') as f:
@@ -400,12 +416,12 @@ def run( kernel, version="", pr="ROUT", limit=100, load_addrs=None, store_addrs=
                 return None
 
     # Run the kernel
-    cgra = CGRA(ker, mem, load_addrs, store_addrs)
+    cgra = CGRA(ker, mem, load_addrs, store_addrs, memory_manager)
     mem = cgra.run(pr, limit)
 
     # Store the output sorted
     sorted_mem = sorted(mem, key=lambda x: x[0])
     with open( kernel + "/"+FILENAME_MEM_O+version+EXT, 'w+') as f:
         for row in sorted_mem: csv.writer(f).writerow(row)
-
+    display_characterization(cgra, pr)
     print("\n\nEND")

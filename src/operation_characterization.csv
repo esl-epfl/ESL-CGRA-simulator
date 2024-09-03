@@ -1,0 +1,36 @@
+# operation_latency_cc_mapping
+NOP,1
+EXIT,2
+SADD,1
+SSUB,1
+SLT,1
+SRT,1
+SRA,1
+LAND,1
+LOR,1
+LXOR,1
+LNAND,1
+LNOR,1
+LXNOR,1
+BSFA,1
+BZFA,1
+BEQ,1
+BNE,1
+BLT,1
+BGE,1
+JUMP,1
+LWD,2
+SWD,2
+LWI,2
+SWI,2
+SMUL,3
+FXPMUL,3
+
+# operation_active_row_coef_mapping
+ONE-TO-M, 1
+N-TO-M, 0 
+INTERLEAVED, 0
+# operation_cpu_loop_instrs_mapping
+ONE-TO-M, 5
+N-TO-M, 0 
+INTERLEAVED, 0
