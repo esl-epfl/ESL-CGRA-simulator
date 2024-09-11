@@ -293,8 +293,7 @@ class PE:
         return c_int32( val1 * val2 ).value
 
     def fxpmul( val1, val2 ):
-        print("Better luck next time")
-        return 0
+        return c_int32((c_int64(val1).value * c_int64(val2).value) >> 15).value
 
     def slt( val1, val2 ):
         return c_int32(val1 << val2).value
