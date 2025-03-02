@@ -95,6 +95,8 @@ class CGRA:
         self.instr_latency_cc = []
         self.prev_ops = [["" for _ in range(N_COLS)] for _ in range(N_ROWS)]
         self.reconfig_consumption_w = [[0 for _ in range(N_COLS)] for _ in range(N_ROWS)]
+        self.nbr_accesses = 0
+        self.operation_count_dict = {}
         
         if read_addrs is not None and len(read_addrs) == N_COLS:
             self.load_addr = read_addrs
@@ -111,7 +113,7 @@ class CGRA:
     def run( self, pr, limit ):
         steps = 0
         while not self.step(pr):
-            print("-------")
+            if PRINT_OUTS: print("-------")
             steps += 1
             if steps > limit:
                 print("EXECUTION LIMIT REACHED (",limit,"steps)")
@@ -143,6 +145,7 @@ class CGRA:
         get_latency_cc(self)  
         get_power_w(self) 
         print_out( prs, outs, insts, ops, reg, self.power[-1], self.energy[-1])
+    
         self.instr2exec += 1
         self.cycles += 1
         return self.exit    
@@ -187,15 +190,20 @@ class CGRA:
         return
 
     def load_indirect( self, addr ):
+        # print(f"Reading from address {addr}")
         for row in self.memory:
             if row[0] == addr:
+                # print(f"Read {row[1]} from address {addr}")
                 return row[1]
         return -1
 
     def store_indirect( self, addr, val):
+        # print(f"[addr, val] : {[addr, val]}")
+        # print(f"self.memory: {self.memory}")
         for i in range(0,len(self.memory)):
             if self.memory[i][0] == addr:
                 self.memory[i][1] = val
+                
                 return
         self.memory.append([addr, val])
         return
@@ -440,11 +448,13 @@ def run( kernel, version="", pr="ROUT", limit=100, load_addrs=None, store_addrs=
             except ValueError:
                 print("Error: Values in CSV file are not integers.")
                 return None
-
+    print(mem)
     # Run the kernel
     cgra = CGRA(ker, mem, load_addrs, store_addrs, memory_manager)
+    print(cgra.load_addr)
+    print(cgra.store_addr)
     mem = cgra.run(pr, limit)
-
+    
     # Store the output sorted
     sorted_mem = sorted(mem, key=lambda x: x[0])
     with open( kernel + "/"+FILENAME_MEM_O+version+EXT, 'w+') as f:
