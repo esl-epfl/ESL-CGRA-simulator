@@ -49,8 +49,8 @@ def print_out( prs, outs, insts, ops, reg, power, energy ):
                 elif    pr == "R1"   : pnt = reg[r][1]
                 elif    pr == "R2"   : pnt = reg[r][2]
                 elif    pr == "R3"   : pnt = reg[r][3]
-                elif    pr == "PWR_OP" or pr == "ALL_PWR_EN_INFO": pnt = power[r]
-                elif    pr == "EN_OP" or pr == "ALL_PWR_EN_INFO": pnt = energy[r]
+                elif    pr == "PWR_OP" : pnt = power[r]
+                elif    pr == "EN_OP" : pnt = energy[r]
                 if pnt != []:
                     out_string += "["
                 for i in range(len(pnt)):
@@ -68,9 +68,9 @@ def print_out( prs, outs, insts, ops, reg, power, energy ):
         flattened_power = [power for row in power for power in row]
         flattened_energy = [energy for row in energy for energy in row]
         pwr_en_output = []
-        if any(item in prs for item in ["PWR_OP", "ALL_PWR_EN_INFO"]):
+        if any(item in prs for item in ["PWR_OP"]):
             pwr_en_output.append(f'Power: {format(sum(flattened_power), ".2e")} W')
-        if any(item in prs for item in ["EN_OP", "ALL_PWR_EN_INFO"]):
+        if any(item in prs for item in ["EN_OP"]):
             pwr_en_output.append(f'Energy: {format(sum(flattened_energy), ".2e")} J')
         if pwr_en_output: print(', '.join(pwr_en_output))
 
@@ -97,7 +97,9 @@ class CGRA:
         self.reconfig_consumption_w = [[0 for _ in range(N_COLS)] for _ in range(N_ROWS)]
         self.nbr_accesses = 0
         self.operation_count_dict = {}
-        
+        self.instr_power = 0
+        self.instr_energy = [[0 for _ in range(N_COLS)] for _ in range(N_ROWS)]
+
         if read_addrs is not None and len(read_addrs) == N_COLS:
             self.load_addr = read_addrs
         else:
@@ -144,8 +146,33 @@ class CGRA:
         self.flag_poll_cnt = 0
         get_latency_cc(self)  
         get_power_w(self) 
-        print_out( prs, outs, insts, ops, reg, self.power[-1], self.energy[-1])
-    
+        curr_pwr = [[0 for _ in range(N_COLS)] for _ in range(N_ROWS)]
+        curr_en_sum = 0
+        curr_pwr_sum = 0
+        for r in range(N_ROWS):
+            for c in range(N_COLS):
+                curr_pwr[r][c] = self.energy[-1][r][c] / (1E-08 * self.instr_latency_cc[-1].latency_cc)
+                curr_pwr_sum += curr_pwr[r][c]
+                curr_en_sum += self.energy[-1][r][c]
+        
+        print_out( prs, outs, insts, ops, reg, curr_pwr, self.energy[-1])
+        
+        # for r in range(N_ROWS):
+        #     for c in range(N_COLS):
+        #         self.instr_energy[r][c] += self.energy[-1][r][c]
+        # print("Power per PE (W):")
+        # for row_idx in range(N_ROWS):
+        #     line = curr_pwr[row_idx]  
+        #     out_string = " ".join(f"{elem:.2e}" for elem in line)
+        #     print(out_string)
+        # print("Energy per PE (J):")
+        # for row_idx in range(N_ROWS):
+        #     line = self.energy[-1][row_idx]  
+        #     out_string = " ".join(f"{elem:.2e}" for elem in line)
+        #     print(out_string)
+
+        if any(item in prs for item in ["ALL_LAT_INFO"]):
+            print(f"Latency: {self.instr_latency_cc[-1].latency_cc} cc")
         self.instr2exec += 1
         self.cycles += 1
         return self.exit    
@@ -227,6 +254,7 @@ class PE:
         self.power      = 0
         self.energy     = 0
         self.addr       = 0
+
 
     def get_out( self ):
         return self.old_out
@@ -448,11 +476,14 @@ def run( kernel, version="", pr="ROUT", limit=100, load_addrs=None, store_addrs=
             except ValueError:
                 print("Error: Values in CSV file are not integers.")
                 return None
-    print(mem)
+    # print(mem)
     # Run the kernel
     cgra = CGRA(ker, mem, load_addrs, store_addrs, memory_manager)
-    print(cgra.load_addr)
-    print(cgra.store_addr)
+    # print(cgra.load_addr)
+    # print(cgra.store_addr)
+    if any(item in pr for item in ["ALL_PWR_EN_INFO"]):
+        pr.append("PWR_OP")
+        pr.append("EN_OP")
     mem = cgra.run(pr, limit)
     
     # Store the output sorted
