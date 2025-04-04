@@ -3,6 +3,7 @@ This notebook allows you to manage kernels, simulate them and generate assembly 
 This simulator does not include the compilation of C code into CGRA-compatible assembly code. For that purpose refer to [SAT-MapIt](https://github.com/CristianTirelli/SAT-MapIt).
 
 For additional information on tool, or to cite its use, please refer to
+
 📄 [Aspros, Maxime, et al. "A flexible framework for early power and timing comparison of time-multiplexed CGRA kernel executions", 2025](https://doi.org/10.48550/arXiv.2504.01672)
 
 # Structure
