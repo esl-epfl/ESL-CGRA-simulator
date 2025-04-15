@@ -19,7 +19,7 @@ Each kernel has a folder with its name. All the files needed to run a simulation
 * (optional) A hand-written assembly file.
 * (optional) A `memory.csv` file including the indexed values that the kernel can access from memory.
 
-    You can either write this file by hand or fill the memory using the `kernel_add_memory_region` function.
+    You can either write this file by hand or fill the memory using the `add_memory_region` function.
 * A `instructions.csv` file containing a matrix of operations to be executed by each Processing Element (PE) during each instruction.
 
     This file can be automatically generated from a `.out` file or hand-written assembly.
@@ -46,7 +46,7 @@ kernel_new("<kernel_name>")
 ### Memory
 The memory can be easily populated with some patter by calling the function
 ```python
-kernel_add_memory_region( "<kernel_name>", <address>, <array_of_values>, [<version>])
+add_memory_region( "<kernel_name>", <address>, <array_of_values>, [<version>])
 ```
 
 The `memory.csv` file should always have this format
@@ -62,7 +62,7 @@ If the address is not found, `-1` is returned (simulating a flash read from an e
 
 When storing information, the kernel will look for the address specified and write in the corresponding data space the value given. If the address is not found, a new line is created containing it.
 
-When using the `kernel_add_memory` function, overlaps are not considered (i.e. a same memory address might appear more than once in the table, but only the first one will be considered by the simulator -as it will always be found first). Be careful. In addition, the default data size is 32 bits, so that consecutive elements will be in memory addresses with a difference of 4.
+When using the `add_memory` function, overlaps are not considered (i.e. a same memory address might appear more than once in the table, but only the first one will be considered by the simulator -as it will always be found first). Be careful. In addition, the default data size is 32 bits, so that consecutive elements will be in memory addresses with a difference of 4.
 
 ### Inputs
 

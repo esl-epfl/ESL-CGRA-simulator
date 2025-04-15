@@ -1,9 +1,11 @@
+import copy
 import numpy as np
 from ctypes import c_int32
 import csv
 import os.path
-
+from characterization import display_characterization, get_latency_cc, get_power_w
 from kernels import *
+from memory import *
 
 # CGRA from left to right, top to bottom
 N_ROWS      = 4
@@ -11,7 +13,7 @@ N_COLS      = 4
 INSTR_SIZE  = N_ROWS+1
 MAX_COL     = N_COLS - 1
 MAX_ROW     = N_ROWS - 1
-
+BUS_TYPES = ["ONE-TO-M", "N-TO-M", "INTERLEAVED"]
 PRINT_OUTS  = 1
 
 MAX_32b = 0xFFFFFFFF
@@ -30,37 +32,50 @@ def ker_parse( data ):
     instrs = int(len(data)/( INSTR_SIZE  )) # Always have a CSV with as many csv-columns as CGA-columns. Each instruction starts with the instruction timestamp i nthe first column. The next instruction must be immediately after the last row of this instruction.
     return [ INSTR( data[r_i*INSTR_SIZE:(r_i+1)*INSTR_SIZE][0:] ) for r_i in range(instrs) ]
 
+def print_out( prs, outs, insts, ops, reg, power=None, energy=None ):
+    for r in range(N_ROWS):
+        if PRINT_OUTS:
+            out_string = ""
 
-def print_out( prs, outs, insts, ops, reg ):
-    if PRINT_OUTS:
-        out_string = ""
+            if type(prs) == str:
+                prs = [prs]
 
-        if type(prs) == str:
-            prs = [prs]
-
-        for pr in prs:
-            pnt = []
-            if      pr == "ROUT" : pnt = outs
-            elif    pr == "INST" : pnt = insts
-            elif    pr == "OPS"  : pnt = ops
-            elif    pr == "R0"   : pnt = reg[0]
-            elif    pr == "R1"   : pnt = reg[1]
-            elif    pr == "R2"   : pnt = reg[2]
-            elif    pr == "R3"   : pnt = reg[3]
-
-            out_string += "["
-            for i in range(len(pnt)):
-                out_string += "{{{}:4}}".format(i)
-                if i == (len(pnt) - 1):
-                    out_string += "]    "
-                else:
-                    out_string += ", "
-            out_string = out_string.format(*[o for o in pnt])
-        print(out_string)
-
+            for pr in prs:
+                pnt = []
+                if      pr == "ROUT" : pnt = outs[r]
+                elif    pr == "INST" : pnt = insts[r]
+                elif    pr == "OPS"  : pnt = ops[r]
+                elif    pr == "R0"   : pnt = reg[r][0]
+                elif    pr == "R1"   : pnt = reg[r][1]
+                elif    pr == "R2"   : pnt = reg[r][2]
+                elif    pr == "R3"   : pnt = reg[r][3]
+                elif    pr == "PWR_OP" : pnt = power[r]
+                elif    pr == "EN_OP" : pnt = energy[r]
+                if pnt != []:
+                    out_string += "["
+                for i in range(len(pnt)):
+                    if isinstance(pnt[i], float):
+                        out_string += "{{{}:.2e}}".format(i)
+                    else:
+                        out_string += "{{{}:4}}".format(i) 
+                    if i == (len(pnt) - 1):
+                        out_string += "]    "
+                    else:
+                        out_string += ", "
+                out_string = out_string.format(*[o for o in pnt])
+            print(out_string)
+    if (power and energy):
+        flattened_power = [power for row in power for power in row]
+        flattened_energy = [energy for row in energy for energy in row]
+        pwr_en_output = []
+        if any(item in prs for item in ["PWR_OP"]):
+            pwr_en_output.append(f'Power: {format(sum(flattened_power), ".2e")} W')
+        if any(item in prs for item in ["EN_OP"]):
+            pwr_en_output.append(f'Energy: {format(sum(flattened_energy), ".2e")} J')
+        if pwr_en_output: print(', '.join(pwr_en_output))
 
 class CGRA:
-    def __init__( self, kernel, memory, read_addrs, write_addrs):
+    def __init__( self, kernel, memory, read_addrs, write_addrs, memory_manager):
         self.cells = []
         for r in range(N_ROWS):
             list = []
@@ -71,6 +86,20 @@ class CGRA:
         self.memory     = memory
         self.instr2exec = 0
         self.cycles     = 0
+        self.N_COLS     = N_COLS
+        self.N_ROWS     = N_ROWS  
+        self.power      = []
+        self.energy     = []
+        self.max_latency_instr = None
+        self.total_latency_cc = 0
+        self.instr_latency_cc = []
+        self.prev_ops = [["" for _ in range(N_COLS)] for _ in range(N_ROWS)]
+        self.reconfig_consumption_w = [[0 for _ in range(N_COLS)] for _ in range(N_ROWS)]
+        self.nbr_accesses = 0
+        self.operation_count_dict = {}
+        self.instr_power = 0
+        self.instr_energy = [[0 for _ in range(N_COLS)] for _ in range(N_ROWS)]
+
         if read_addrs is not None and len(read_addrs) == N_COLS:
             self.load_addr = read_addrs
         else:
@@ -79,12 +108,14 @@ class CGRA:
             self.store_addr = write_addrs
         else:
             self.store_addr = [0]*N_COLS
+        self.init_store = copy.copy(self.store_addr)
+        self.memory_manager   = memory_manager
         self.exit       = False
 
     def run( self, pr, limit ):
         steps = 0
         while not self.step(pr):
-            print("-------")
+            if PRINT_OUTS: print("-------")
             steps += 1
             if steps > limit:
                 print("EXECUTION LIMIT REACHED (",limit,"steps)")
@@ -97,6 +128,10 @@ class CGRA:
             for c in range(N_COLS):
                 self.cells[r][c].update()
         instr2exec = self.instr2exec
+        outs    = [[] for _ in range (N_COLS)]
+        insts   = [[] for _ in range (N_COLS)]
+        ops     = [[] for _ in range (N_COLS)]
+        reg     = [[] for _ in range (N_COLS)]
         if PRINT_OUTS: print("Instr = ", self.cycles, "(",instr2exec,")")
         for r in range(N_ROWS):
             for c in range(N_COLS):
@@ -104,15 +139,20 @@ class CGRA:
                 b ,e = self.cells[r][c].exec( op )
                 if b != 0: self.instr2exec = b - 1 #To avoid more logic afterwards
                 if e != 0: self.exit = True
-            outs    = [ self.cells[r][i].out        for i in range(N_COLS) ]
-            insts   = [ self.cells[r][i].instr      for i in range(N_COLS) ]
-            ops     = [ self.cells[r][i].op         for i in range(N_COLS) ]
-            reg     = [[ self.cells[r][i].regs[regs[x]]   for i in range(N_COLS) ] for x in range(len(regs)) ]
-            print_out( prs, outs, insts, ops, reg )
+            outs[r]     = ([ self.cells[r][i].out        for i in range(N_COLS) ])
+            insts[r]    = ([ self.cells[r][i].instr      for i in range(N_COLS) ])
+            ops[r]      = ([ self.cells[r][i].op         for i in range(N_COLS) ])
+            reg[r]      = ([[ self.cells[r][i].regs[regs[x]]   for i in range(N_COLS) ] for x in range(len(regs)) ])
+        self.flag_poll_cnt = 0
+        get_latency_cc(self)  
+        get_power_w(self)  
+        print_out( prs, outs, insts, ops, reg, self.power[-1], self.energy[-1])
 
+        if any(item in prs for item in ["ALL_LAT_INFO"]):
+            print(f"Latency: {self.instr_latency_cc[-1].latency_cc} cc")
         self.instr2exec += 1
         self.cycles += 1
-        return self.exit
+        return self.exit    
 
     def get_neighbour_address( self, r, c, dir ):
         n_r = r
@@ -161,7 +201,7 @@ class CGRA:
     def store_indirect( self, addr, val):
         for i in range(0,len(self.memory)):
             if self.memory[i][0] == addr:
-                self.memory[i][1] = val
+                self.memory[i][1] = val          
                 return
         self.memory.append([addr, val])
         return
@@ -181,6 +221,11 @@ class PE:
         self.regs       = {'R0':0, 'R1':0, 'R2':0, 'R3':0 }
         self.op         = ""
         self.instr      = ""
+        self.latency_cc = 0
+        self.power      = 0
+        self.energy     = 0
+        self.addr       = 0
+
 
     def get_out( self ):
         return self.old_out
@@ -218,6 +263,7 @@ class PE:
         instr   = instr.replace(',', ' ')   # Remove the commas so we can speparate arguments by spaces
         self.instr = instr                  # Save this string as instruction to show
         instr   = instr.split()             # Split into chunks
+        self.params_info = ''
         try:
             self.op      = instr[0]
         except:
@@ -251,25 +297,27 @@ class PE:
 
         elif self.op in self.ops_lwd:
             des = instr[1]
+            self.addr = self.parent.load_addr[self.col]
             ret = self.parent.load_direct( self.col, 4 )
             if des in self.regs: self.regs[des] = ret
             self.out = ret
 
         elif self.op in self.ops_swd:
             val = self.fetch_val( instr[1] )
+            self.addr = self.parent.store_addr[self.col]
             self.parent.store_direct( self.col, val, 4 )
 
         elif self.op in self.ops_lwi:
             des = instr[1]
-            addr = self.fetch_val( instr[2] )
-            ret = self.parent.load_indirect(addr)
+            self.addr = self.fetch_val( instr[2] )
+            ret = self.parent.load_indirect(self.addr)
             if des in self.regs: self.regs[des] = ret
             self.out = ret
 
         elif self.op in self.ops_swi:
-            addr = self.fetch_val( instr[2] )
+            self.addr = self.fetch_val( instr[2] )
             val = self.fetch_val( instr[1] )
-            self.parent.store_indirect( addr, val )
+            self.parent.store_indirect( self.addr, val )
             pass
 
         elif self.op in self.ops_nop:
@@ -374,7 +422,7 @@ class PE:
     ops_jump    = { 'JUMP'      : '' }
     ops_exit    = { 'EXIT'      : '' }
 
-def run( kernel, version="", pr="ROUT", limit=100, load_addrs=None, store_addrs=None):
+def run( kernel, version="", pr="ROUT", limit=100, load_addrs=None, store_addrs=None, memory_manager=MEMORY()):
     ker = []
     mem = []
 
@@ -384,7 +432,7 @@ def run( kernel, version="", pr="ROUT", limit=100, load_addrs=None, store_addrs=
 
    # Create an empty memory file if there is not any
     if not os.path.isfile(kernel + "/"+FILENAME_MEM+version+EXT):
-        kernel_clear_memory(kernel, version)
+        clear_memory(kernel, version)
 
     # Read the memory file
     with open( kernel + "/"+FILENAME_MEM+version+EXT, 'r') as f:
@@ -397,14 +445,16 @@ def run( kernel, version="", pr="ROUT", limit=100, load_addrs=None, store_addrs=
             except ValueError:
                 print("Error: Values in CSV file are not integers.")
                 return None
-
     # Run the kernel
-    cgra = CGRA(ker, mem, load_addrs, store_addrs)
+    cgra = CGRA(ker, mem, load_addrs, store_addrs, memory_manager)
+    if any(item in pr for item in ["ALL_PWR_EN_INFO"]):
+        pr.append("PWR_OP")
+        pr.append("EN_OP")
     mem = cgra.run(pr, limit)
-
+    
     # Store the output sorted
     sorted_mem = sorted(mem, key=lambda x: x[0])
     with open( kernel + "/"+FILENAME_MEM_O+version+EXT, 'w+') as f:
         for row in sorted_mem: csv.writer(f).writerow(row)
-
+    display_characterization(cgra, pr)
     print("\n\nEND")
