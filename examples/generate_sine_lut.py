@@ -1,38 +1,140 @@
-#!/usr/bin/env python3
 """
-=============================================================================
-  ESL-CGRA Sine Approximation Generator
-=============================================================================
-
-Generates all files needed to run a piecewise polynomial approximation of
-sin(x) (or any function) on the ESL-CGRA simulator.
-
-Algorithm (piecewise polynomial with Horner evaluation):
-  1. Divide [x_min, x_max] into N segments of width 2^SHIFT (Q15 fixed-point).
-  2. For each segment, fit a polynomial of the requested order.
-  3. At runtime on the CGRA:
-       a. Load x (Q15 fixed-point)
-       b. Compute segment index = (x - x_min) >> SHIFT
-       c. Compute dx = x - x_segment_start
-       d. Evaluate polynomial via Horner's method:
-            y = (...((c[K]*dx + c[K-1])*dx + ...)*dx + c[0])   using FXPMUL
-       e. Store y
-
-Fixed-point: Q15  (real_value = int_value / 32768)
-
-NOTE: The simulator's cgra.py needs `from ctypes import c_int32, c_int64`
-      (the original only imports c_int32, but FXPMUL uses c_int64).
-
-Usage:
-    python generate_sine_lut.py                          # defaults: linear
-    python generate_sine_lut.py --order 2 --shift 11     # quadratic, finer
-    python generate_sine_lut.py --order 3 --x_test 1.5   # cubic
-
-Outputs (in <kernel_dir>/):
-    instructions.csv   -- CGRA instruction file
-    memory.csv         -- memory initialisation (LUT + input)
-    sine_lut.ipynb     -- Jupyter notebook to run & validate
+Generate CGRA instructions and memory for piecewise polynomial sine (or any function).
+Edit the parameters below, then run: python generate_sine_lut.py
 """
+
+import math, csv, os, json
+import numpy as np
+
+
+# ===================== EDIT THESE =====================
+def func(x):
+    return math.sin(x)
+
+
+SCALE = 10000  # values are integers = round(real_value * SCALE)
+X_MIN = 0.0
+X_MAX = 2 * math.pi
+SHIFT = 10  # segment width = 2^SHIFT in scaled-x units
+ORDER = 1  # 1 = linear (y=ax+b), 2 = quadratic, 3 = cubic ...
+X_TEST = 1.0  # test input placed in memory
+KERNEL = "sine_approx"  # output folder
+# ======================================================
+
+# Fixed addresses
+LUT_BASE = 100
+OUTPUT_ADDR = 10000
+
+# Derived constants
+x_min_int = round(X_MIN * SCALE)
+x_max_int = round(X_MAX * SCALE)
+seg_width = 1 << SHIFT
+mask = seg_width - 1
+n_segs = (x_max_int - x_min_int) >> SHIFT
+n_coeffs = ORDER + 1
+stride = n_coeffs * 4  # bytes per segment in LUT
+
+
+# ---- Build LUT ----
+# For each segment, fit a polynomial y(t) = c0 + c1*t + c2*t^2 + ...
+# where t = dx / 2^SHIFT  (t in [0,1) within the segment)
+# Coefficients are stored as round(c_real * SCALE).
+
+segments = []
+for i in range(n_segs):
+    x_start = X_MIN + i * seg_width / SCALE
+    t_pts = [j / max(ORDER, 1) for j in range(ORDER + 1)]
+    x_pts = [x_start + t * seg_width / SCALE for t in t_pts]
+    y_pts = [func(x) for x in x_pts]
+    coeffs = np.polyfit(t_pts, y_pts, ORDER)[::-1]  # c0, c1, c2, ...
+    segments.append([round(c * SCALE) for c in coeffs])
+
+
+# ---- Write memory.csv ----
+os.makedirs(KERNEL, exist_ok=True)
+x_test_int = round(X_TEST * SCALE)
+
+with open(f"{KERNEL}/memory.csv", "w", newline="") as f:
+    w = csv.writer(f)
+    w.writerow(["Address", "Data"])
+    w.writerow([0, x_test_int])  # x input
+    w.writerow([4, x_min_int])  # x_min
+    for i, coeffs in enumerate(segments):
+        for k, c in enumerate(coeffs):
+            w.writerow([LUT_BASE + i * stride + k * 4, c])
+
+
+# ---- Write instructions.csv ----
+# Pipelined across the 4x4 grid. PE layout:
+#
+#   PE(0,0) : loads x, computes dx. Holds dx in its output forever.
+#   PE(0,1) : loads x_min.
+#   PE(1,0) : computes offset, runs Horner accumulator, stores result.
+#   PE(2,0) : holds LUT base address, loads coefficients for Horner.
+#   PE(0,3) : EXIT.
+#
+# Routing used:
+#   RCR(0,0) = PE(0,1).old_out  -> get x_min
+#   RCT(1,0) = PE(0,0).old_out  -> get index, then dx
+#   RCT(2,0) = PE(1,0).old_out  -> get offset
+#   RCB(1,0) = PE(2,0).old_out  -> get loaded coefficients
+#
+# No FXPMUL. Multiply is SMUL (int32), shift is SRA (arithmetic).
+#
+# Total instructions = 7 + 3 * ORDER
+
+
+def grid(ops):
+    """Build one 4x4 instruction. ops = {(row,col): "OP", ...}"""
+    g = [["NOP"] * 4 for _ in range(4)]
+    for (r, c), op in ops.items():
+        g[r][c] = op
+    return g
+
+
+instrs = []
+
+# -- Setup (6 instructions) --
+# 0: load x and x_min
+instrs.append(grid({(0, 0): "LWD R0", (0, 1): "LWD R0"}))
+# 1: dx_total = x - x_min    (RCR of col0 = col1 = x_min)
+instrs.append(grid({(0, 0): "SSUB R0, R0, RCR"}))
+# 2: index = dx_total >> SHIFT
+instrs.append(grid({(0, 0): f"SRT R1, R0, {SHIFT}"}))
+# 3: dx = dx_total & mask  (parallel with offset = index * stride on row 1)
+instrs.append(grid({(0, 0): f"LAND R0, R0, {mask}", (1, 0): f"SMUL R0, RCT, {stride}"}))
+# 4: addr of c[ORDER] (row1), base address (row2, for Horner coeff loading)
+instrs.append(
+    grid(
+        {
+            (1, 0): f"SADD R1, R0, {LUT_BASE + ORDER * 4}",
+            (2, 0): f"SADD R0, RCT, {LUT_BASE}",
+        }
+    )
+)
+# 5: load highest-order coefficient into accumulator
+instrs.append(grid({(1, 0): "LWI R1, R1"}))
+
+# -- Horner loop: for k = ORDER-1 down to 0 --
+# Each step: acc = (acc * dx) >> SHIFT + c[k]
+# 3 instructions per step, with coefficient loading overlapped.
+for k in range(ORDER - 1, -1, -1):
+    # multiply accumulator by dx, compute address of c[k]
+    instrs.append(grid({(1, 0): "SMUL R1, R1, RCT", (2, 0): f"SADD ROUT, R0, {k * 4}"}))
+    # arithmetic shift right, load c[k]
+    instrs.append(grid({(1, 0): f"SRA R1, R1, {SHIFT}", (2, 0): "LWI R1, ROUT"}))
+    # add coefficient   (RCB of row1 = row2 = loaded c[k])
+    instrs.append(grid({(1, 0): "SADD R1, R1, RCB"}))
+
+# -- Store result and exit --
+instrs.append(grid({(1, 0): "SWD R1", (0, 3): "EXIT"}))
+
+with open(f"{KERNEL}/instructions.csv", "w", newline="") as f:
+    w = csv.writer(f)
+    for t, g in enumerate(instrs):
+        w.writerow([t])
+        for row in g:
+            w.writerow(row)
 
 import numpy as np
 import csv
@@ -214,194 +316,6 @@ def write_instructions(kernel_dir, shift, order, version=""):
                 writer.writerow(row)
     return fpath, len(instrs)
 
-
-# ---------------------------------------------------------------------------
-# Jupyter notebook generator
-# ---------------------------------------------------------------------------
-def write_notebook(
-    kernel_dir, kernel_name, x_test, x_min, x_max, shift, order, func_name, version=""
-):
-    nb = {
-        "nbformat": 4,
-        "nbformat_minor": 5,
-        "metadata": {
-            "kernelspec": {
-                "display_name": "Python 3",
-                "language": "python",
-                "name": "python3",
-            },
-            "language_info": {"name": "python", "version": "3.12.0"},
-        },
-        "cells": [],
-    }
-
-    def md(src):
-        nb["cells"].append({"cell_type": "markdown", "metadata": {}, "source": src})
-
-    def code(src):
-        nb["cells"].append(
-            {
-                "cell_type": "code",
-                "metadata": {},
-                "outputs": [],
-                "source": src,
-                "execution_count": None,
-            }
-        )
-
-    order_name = {1: "linear", 2: "quadratic", 3: "cubic"}.get(order, f"degree-{order}")
-    md(
-        [
-            f"# Piecewise Polynomial Sine on ESL-CGRA\n",
-            f"\n",
-            f"| Parameter | Value |\n",
-            f"|-----------|-------|\n",
-            f"| Function | `{func_name}(x)` |\n",
-            f"| Range | [{x_min:.4f}, {x_max:.4f}] |\n",
-            f"| Order | {order} ({order_name}) |\n",
-            f"| SHIFT | {shift} (segment width = {(1<<shift)/Q15:.6f} rad) |\n",
-            f"| Test point | x = {x_test} |\n",
-            f"| Expected | {func_name}({x_test}) = {math.sin(x_test):.10f} |\n",
-        ]
-    )
-
-    md(
-        [
-            "## 1. Run the CGRA simulation\n",
-            "\n",
-            "**Important**: `cgra.py` needs this import for FXPMUL to work:\n",
-            "```python\n",
-            "from ctypes import c_int32, c_int64\n",
-            "```\n",
-        ]
-    )
-
-    code(
-        [
-            "import sys, os, csv, math\n",
-            "\n",
-            "# Point to simulator sources (adjust as needed)\n",
-            "SIM_SRC = os.path.abspath('..')\n",
-            "sys.path.insert(0, SIM_SRC)\n",
-            "sys.path.insert(0, '.')\n",
-            "from cgra import *\n",
-            "\n",
-            f'KERNEL  = "{kernel_name}"\n',
-            f'VERSION = "{version}"\n',
-            f"Q15     = {Q15}\n",
-            "\n",
-            "load_addrs  = [0, 0, 0, 0]\n",
-            "store_addrs = [10000, 0, 0, 0]\n",
-            "\n",
-            "run(KERNEL, version=VERSION,\n",
-            '    pr=["ROUT", "OPS", "R0", "R1", "R2", "R3", "ALL_LAT_INFO", "ALL_PWR_EN_INFO"],\n',
-            "    load_addrs=load_addrs, store_addrs=store_addrs, limit=500)\n",
-        ]
-    )
-
-    md(["## 2. Read result and compare"])
-
-    code(
-        [
-            f'mem_path = os.path.join(KERNEL, "memory_out" + VERSION + ".csv")\n',
-            "with open(mem_path) as f:\n",
-            "    mem_out = {int(r[0]): int(r[1]) for r in csv.reader(f)}\n",
-            "\n",
-            f"x_test   = {x_test}\n",
-            "result   = mem_out.get(10000)\n",
-            "expected = math.sin(x_test)\n",
-            "\n",
-            "print(f'Q15 integer  : {result}')\n",
-            "print(f'Float result : {result/Q15:.10f}')\n",
-            "print(f'Expected     : {expected:.10f}')\n",
-            "print(f'Abs error    : {abs(result/Q15 - expected):.2e}')\n",
-        ]
-    )
-
-    md(["## 3. Sweep the full range"])
-
-    code(
-        [
-            "import numpy as np\n",
-            "sys.path.insert(0, '.')\n",
-            "import generate_sine_lut as gen\n",
-            "\n",
-            f"X_MIN, X_MAX = {x_min}, {x_max}\n",
-            f"SHIFT, ORDER = {shift}, {order}\n",
-            "\n",
-            "segments, n_seg, step_q15 = gen.generate_lut(math.sin, X_MIN, X_MAX, SHIFT, ORDER)\n",
-            "\n",
-            "xs = np.linspace(X_MIN + 0.001, X_MAX - 0.001, 80)\n",
-            "results, expecteds = [], []\n",
-            "\n",
-            "for xt in xs:\n",
-            "    gen.write_memory(KERNEL, xt, X_MIN, segments, ORDER, version=VERSION)\n",
-            "    run(KERNEL, version=VERSION, pr=[], load_addrs=[0,0,0,0],\n",
-            "        store_addrs=[10000,0,0,0], limit=500)\n",
-            f'    with open(os.path.join(KERNEL, "memory_out" + VERSION + ".csv")) as f:\n',
-            "        mo = {int(r[0]): int(r[1]) for r in csv.reader(f)}\n",
-            "    val = mo.get(10000)\n",
-            "    results.append(val / Q15 if val is not None else float('nan'))\n",
-            "    expecteds.append(math.sin(xt))\n",
-            "\n",
-            "results   = np.array(results)\n",
-            "expecteds = np.array(expecteds)\n",
-            "errors    = np.abs(results - expecteds)\n",
-            "\n",
-            "print(f'Points tested  : {len(xs)}')\n",
-            "print(f'Max abs error  : {np.nanmax(errors):.6e}')\n",
-            "print(f'Mean abs error : {np.nanmean(errors):.6e}')\n",
-        ]
-    )
-
-    md(["## 4. Plot results"])
-
-    code(
-        [
-            "try:\n",
-            "    import matplotlib.pyplot as plt\n",
-            "    fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(10, 7), sharex=True)\n",
-            "    ax1.plot(xs, expecteds, 'b-', lw=2, label='sin(x) exact')\n",
-            f"    ax1.plot(xs, results, 'r--', lw=1.5, label='CGRA order-{order}')\n",
-            "    ax1.legend(); ax1.set_ylabel('Value'); ax1.grid(True, alpha=0.3)\n",
-            f"    ax1.set_title('Piecewise order-{order} sine on ESL-CGRA')\n",
-            "    ax2.semilogy(xs, errors, 'k-')\n",
-            "    ax2.set_ylabel('Abs error'); ax2.set_xlabel('x (rad)'); ax2.grid(True, alpha=0.3)\n",
-            "    plt.tight_layout()\n",
-            "    plt.savefig(os.path.join(KERNEL, 'accuracy.png'), dpi=150); plt.show()\n",
-            "except ImportError:\n",
-            "    print('matplotlib not available')\n",
-        ]
-    )
-
-    md(
-        [
-            "## 5. Regenerate with different parameters\n",
-            "\n",
-            "Uncomment and edit to try a different configuration:",
-        ]
-    )
-
-    code(
-        [
-            "# import generate_sine_lut as gen\n",
-            "# gen.generate_all(\n",
-            "#     func=math.sin, func_name='sin',\n",
-            "#     x_min=0.0, x_max=2*math.pi,\n",
-            "#     shift=11,    # finer segments (more accuracy)\n",
-            "#     order=2,     # quadratic\n",
-            "#     x_test=1.5,\n",
-            f"#     kernel_name='{kernel_name}',\n",
-            "# )\n",
-        ]
-    )
-
-    fpath = os.path.join(kernel_dir, f"sine_lut{version}.ipynb")
-    with open(fpath, "w") as f:
-        json.dump(nb, f, indent=1)
-    return fpath
-
-
 # ---------------------------------------------------------------------------
 # Main orchestrator
 # ---------------------------------------------------------------------------
@@ -440,14 +354,10 @@ def generate_all(
 
     mem_path = write_memory(kernel_name, x_test, x_min, segments, order, version)
     instr_path, n_instrs = write_instructions(kernel_name, shift, order, version)
-    nb_path = write_notebook(
-        kernel_name, kernel_name, x_test, x_min, x_max, shift, order, func_name, version
-    )
 
     print(f"\n  Generated files:")
     print(f"    {mem_path:<45} ({n_seg*(order+1)+2} memory words)")
     print(f"    {instr_path:<45} ({n_instrs} instructions)")
-    print(f"    {nb_path}")
 
     # ---- Pure-Python self-check ----
     x_q15 = float_to_q15(x_test)
@@ -516,3 +426,24 @@ if __name__ == "__main__":
         kernel_name=args.kernel,
         version=args.version,
     )
+
+# ---- Print summary ----
+print(
+    f"ORDER={ORDER}, SHIFT={SHIFT}, segments={n_segs}, "
+    f"instructions={len(instrs)}, LUT words={n_segs * n_coeffs}"
+)
+print(f"Files: {KERNEL}/instructions.csv, {KERNEL}/memory.csv, {KERNEL}/sine_lut.ipynb")
+
+# ---- Self-check ----
+dx_total = x_test_int - x_min_int
+index = dx_total >> SHIFT
+dx = dx_total & mask
+seg = segments[index]
+acc = seg[ORDER]
+for k in range(ORDER - 1, -1, -1):
+    acc = (acc * dx >> SHIFT) + seg[k]
+expected = round(func(X_TEST) * SCALE)
+print(
+    f"x={X_TEST} -> index={index}, dx={dx}, result={acc}, expected={expected}, "
+    f"error={abs(acc - expected)/SCALE:.2e}"
+)
