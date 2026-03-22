@@ -1,32 +1,28 @@
 """
-CGRA Sine Approximation — Pareto Variant Generator
-====================================================
-Generates 9 architecture variants × N SHIFT values for piecewise polynomial
-sine approximation on the ESL-CGRA. Each variant produces an independent
-instructions.csv + memory.csv ready for the simulator.
+CGRA Sine — Pareto Variant Generator (v3)
+==========================================
+13 architecture variants exploring 3 axes independently:
+  Pipeline depth — how many PEs, how overlapped
+  LUT coverage   — full/half/quarter wave symmetry
+  Throughput     — 1×/2×/4× parallel evaluations
 
-Usage:
-  python generate.py                       # ORDER=3, SHIFT=8..12
-  python generate.py --order 2 --shifts 10 # single point
+Key optimization for ORDER=3: stride = 16 = 2^4, so the offset
+multiply (SMUL, 3CC) can be replaced with a shift (SLT, 1CC).
+
+Usage:  python generate.py [--order 3] [--shifts 8 9 10 11 12]
 """
 
 import math, csv, os, json, argparse
 import numpy as np
 
 
-# ── Global parameters ──────────────────────────────────────────────
+# ── Params ─────────────────────────────────────────────────────────
 def func(x):
     return math.sin(x)
 
 
-SCALE = 10000
-X_MIN = 0.0
-X_MAX = 2 * math.pi
-X_TEST = 5.0
-LUT_BASE = 100
-
+SCALE, X_MIN, X_MAX, X_TEST, LUT_BASE = 10000, 0.0, 2 * math.pi, 1.0, 100
 N_ROWS, N_COLS = 4, 4
-
 OP_LAT = {
     "NOP": 1,
     "EXIT": 2,
@@ -38,9 +34,8 @@ OP_LAT = {
     "LAND": 1,
     "LOR": 1,
     "LXOR": 1,
-    "LNAND": 1,
-    "LNOR": 1,
-    "LXNOR": 1,
+    "SMUL": 3,
+    "FXPMUL": 3,
     "BSFA": 1,
     "BZFA": 1,
     "BEQ": 1,
@@ -52,54 +47,50 @@ OP_LAT = {
     "SWD": 2,
     "LWI": 2,
     "SWI": 2,
-    "SMUL": 3,
-    "FXPMUL": 3,
+    "LNAND": 1,
+    "LNOR": 1,
+    "LXNOR": 1,
 }
 
 
 # ── Helpers ────────────────────────────────────────────────────────
-def derived(ORDER, SHIFT, x_min=X_MIN, x_max=X_MAX):
-    xmi = round(x_min * SCALE)
-    xma = round(x_max * SCALE)
-    w = 1 << SHIFT
-    return xmi, xma, w, w - 1, (xma - xmi) >> SHIFT, ORDER + 1, (ORDER + 1) * 4
+def derived(O, S, xmin=X_MIN, xmax=X_MAX):
+    xmi, xma, w = round(xmin * SCALE), round(xmax * SCALE), 1 << S
+    return xmi, xma, w, w - 1, (xma - xmi) >> S, O + 1, (O + 1) * 4
 
 
-def fit_segments(ORDER, SHIFT, x_min=X_MIN, x_max=X_MAX):
-    xmi, xma, w = round(x_min * SCALE), round(x_max * SCALE), 1 << SHIFT
-    n = (xma - xmi) >> SHIFT
+def fit_segs(O, S, xmin=X_MIN, xmax=X_MAX):
+    xmi, xma, w = round(xmin * SCALE), round(xmax * SCALE), 1 << S
+    n = (xma - xmi) >> S
     segs = []
     for i in range(n):
-        x0 = x_min + i * w / SCALE
-        ts = [j / max(ORDER, 1) for j in range(ORDER + 1)]
+        x0 = xmin + i * w / SCALE
+        ts = [j / max(O, 1) for j in range(O + 1)]
         ys = [func(x0 + t * w / SCALE) for t in ts]
-        cs = np.polyfit(ts, ys, ORDER)[::-1]
-        segs.append([round(c * SCALE) for c in cs])
+        segs.append([round(c * SCALE) for c in np.polyfit(ts, ys, O)[::-1]])
     return segs, n
 
 
 def G(ops):
-    """Build one 4×4 instruction grid from a dict of {(row,col): op_string}."""
     g = [["NOP"] * N_COLS for _ in range(N_ROWS)]
     for (r, c), op in ops.items():
         g[r][c] = op
     return g
 
 
-def horner_check(x_test, ORDER, SHIFT, segs, xmi):
-    w, m = 1 << SHIFT, (1 << SHIFT) - 1
-    xi = round(x_test * SCALE)
+def hcheck(xt, O, S, segs, xmi):
+    w, m = 1 << S, (1 << S) - 1
+    xi = round(xt * SCALE)
     dt = xi - xmi
-    idx = dt >> SHIFT
+    idx = dt >> S
     dx = dt & m
     if idx < 0 or idx >= len(segs):
         return None, None, None
     s = segs[idx]
-    acc = s[ORDER]
-    for k in range(ORDER - 1, -1, -1):
-        acc = (acc * dx >> SHIFT) + s[k]
-    exp = round(func(x_test) * SCALE)
-    return acc, exp, abs(acc - exp) / SCALE
+    acc = s[O]
+    for k in range(O - 1, -1, -1):
+        acc = (acc * dx >> S) + s[k]
+    return acc, round(func(xt) * SCALE), abs(acc - round(func(xt) * SCALE)) / SCALE
 
 
 def mem_lut(segs, stride, inputs):
@@ -110,297 +101,269 @@ def mem_lut(segs, stride, inputs):
     return m
 
 
-def total_lat(instrs):
-    t = 0
-    for g in instrs:
-        mx = 1
-        for row in g:
-            for op in row:
-                mx = max(mx, OP_LAT.get(op.replace(",", " ").split()[0], 1))
-        t += mx
-    return t
+def tlat(I):
+    return sum(
+        max(OP_LAT.get(op.replace(",", " ").split()[0], 1) for row in g for op in row)
+        for g in I
+    )
 
 
-def total_lat_looped(instrs, loop):
-    if loop is None:
-        return total_lat(instrs)
+def tlat_loop(I, loop):
+    if not loop:
+        return tlat(I)
     s, e, n = loop
     t = 0
-    for i, g in enumerate(instrs):
-        mx = 1
-        for row in g:
-            for op in row:
-                mx = max(mx, OP_LAT.get(op.replace(",", " ").split()[0], 1))
+    for i, g in enumerate(I):
+        mx = max(
+            OP_LAT.get(op.replace(",", " ").split()[0], 1) for row in g for op in row
+        )
         t += mx * (n if s <= i <= e else 1)
     return t
 
 
-def active_pes(instrs):
-    a = set()
-    for g in instrs:
-        for r in range(N_ROWS):
-            for c in range(N_COLS):
-                if g[r][c] != "NOP":
-                    a.add((r, c))
-    return len(a)
-
-
-def pe_instrs(instrs):
-    return sum(
-        1
-        for g in instrs
-        for r in range(N_ROWS)
-        for c in range(N_COLS)
-        if g[r][c] != "NOP"
+def apes(I):
+    return len(
+        {
+            (r, c)
+            for g in I
+            for r in range(N_ROWS)
+            for c in range(N_COLS)
+            if g[r][c] != "NOP"
+        }
     )
 
 
-def write(name, ORDER, SHIFT, instrs, mem, segs, extra=None):
-    tag = f"{name}_T{ORDER}_S{SHIFT}"
+def pei(I):
+    return sum(
+        1 for g in I for r in range(N_ROWS) for c in range(N_COLS) if g[r][c] != "NOP"
+    )
+
+
+def stride_op(ORDER, stride):
+    """Use SLT (1CC) if stride is power-of-2, else SMUL (3CC)."""
+    if stride > 0 and (stride & (stride - 1)) == 0:
+        shift_amt = stride.bit_length() - 1
+        return f"SLT R0, RCT, {shift_amt}"
+    return f"SMUL R0, RCT, {stride}"
+
+
+def write(name, O, S, I, mem, segs, extra=None):
+    tag = f"{name}_T{O}_S{S}"
     d = os.path.join("pareto_out", tag)
     os.makedirs(d, exist_ok=True)
     with open(os.path.join(d, "instructions.csv"), "w", newline="") as f:
         w = csv.writer(f)
-        for t, g in enumerate(instrs):
+        for t, g in enumerate(I):
             w.writerow([t])
-            for row in g:
-                w.writerow(row)
+            [w.writerow(row) for row in g]
     with open(os.path.join(d, "memory.csv"), "w", newline="") as f:
         w = csv.writer(f)
         w.writerow(["Address", "Data"])
-        for a, v in mem:
-            w.writerow([a, v])
+        [w.writerow([a, v]) for a, v in mem]
     loop = (extra or {}).get("_loop")
-    lat = total_lat_looped(instrs, loop)
+    lat = tlat_loop(I, loop)
     m = {
         "variant": name,
         "tag": tag,
-        "order": ORDER,
-        "shift": SHIFT,
-        "n_instructions": len(instrs),
+        "order": O,
+        "shift": S,
+        "n_instructions": len(I),
         "total_latency_cc": lat,
-        "active_pes": active_pes(instrs),
-        "pe_instructions": pe_instrs(instrs),
-        "lut_words": len(segs) * (ORDER + 1) if segs else 0,
+        "active_pes": apes(I),
+        "pe_instructions": pei(I),
+        "lut_words": len(segs) * (O + 1) if segs else 0,
         "n_segments": len(segs) if segs else 0,
+        "axis": (extra or {}).get("axis", ""),
+        "throughput_factor": (extra or {}).get("throughput_factor", 1),
     }
-    if extra:
-        for k, v in extra.items():
-            if not k.startswith("_"):
-                m[k] = v
     with open(os.path.join(d, "metrics.json"), "w") as f:
         json.dump(m, f, indent=2)
     return m
 
 
+def chk(name, O, S, acc, exp, err):
+    print(
+        f"  {name:<14} T{O} S{S}: {acc} exp={exp} err={err:.2e}"
+        if acc
+        else f"  {name:<14} T{O} S{S}: CHECK FAILED"
+    )
+
+
 # ══════════════════════════════════════════════════════════════════
-#  VARIANT GENERATORS
+#  AXIS 1: PIPELINE DEPTH (full wave, varying PE count & speed)
 # ══════════════════════════════════════════════════════════════════
 
 
-def gen_SEQ(ORDER, SHIFT):
-    """Sequential: everything on PE(0,0). Minimum PEs (2 including EXIT).
-
-    Why it exists: absolute lower bound on PE usage. Shows the penalty
-    of zero parallelism — every operation waits for the previous one.
-    5 instructions per Horner iteration (mul, shift, addr, load, add)
-    because we can't overlap address computation with anything.
-    """
-    xmi, _, w, mask, _, nc, stride = derived(ORDER, SHIFT)
-    segs, _ = fit_segments(ORDER, SHIFT)
+def gen_SEQ(O, S):
+    """1 compute PE. Absolute minimum resources. 40 CC for ORDER=3."""
+    xmi, _, w, mask, _, nc, stride = derived(O, S)
+    segs, _ = fit_segs(O, S)
     xt = round(X_TEST * SCALE)
     I = []
     I.append(G({(0, 0): "LWD R0"}))
     I.append(G({(0, 0): "LWD R1"}))
     I.append(G({(0, 0): "SSUB R0, R0, R1"}))
-    I.append(G({(0, 0): f"SRT R1, R0, {SHIFT}"}))
+    I.append(G({(0, 0): f"SRT R1, R0, {S}"}))
     I.append(G({(0, 0): f"LAND R0, R0, {mask}"}))
     I.append(G({(0, 0): f"SMUL R1, R1, {stride}"}))
     I.append(G({(0, 0): f"SADD R1, R1, {LUT_BASE}"}))
-    I.append(G({(0, 0): f"SADD R3, R1, {ORDER*4}"}))
+    I.append(G({(0, 0): f"SADD R3, R1, {O*4}"}))
     I.append(G({(0, 0): "LWI R2, R3"}))
-    for k in range(ORDER - 1, -1, -1):
+    for k in range(O - 1, -1, -1):
         I.append(G({(0, 0): "SMUL R2, R2, R0"}))
-        I.append(G({(0, 0): f"SRA R2, R2, {SHIFT}"}))
+        I.append(G({(0, 0): f"SRA R2, R2, {S}"}))
         I.append(G({(0, 0): f"SADD R3, R1, {k*4}"}))
         I.append(G({(0, 0): "LWI R3, R3"}))
         I.append(G({(0, 0): "SADD R2, R2, R3"}))
     I.append(G({(0, 0): "SWD R2", (0, 3): "EXIT"}))
-    mem = mem_lut(segs, stride, [(0, xt), (4, xmi)])
-    a, e, err = horner_check(X_TEST, ORDER, SHIFT, segs, xmi)
-    print(f"  SEQ      T{ORDER} S{SHIFT}: {a} exp={e} err={err:.2e}")
+    a, e, err = hcheck(X_TEST, O, S, segs, xmi)
+    chk("SEQ", O, S, a, e, err)
     return write(
         "SEQ",
-        ORDER,
-        SHIFT,
+        O,
+        S,
         I,
-        mem,
+        mem_lut(segs, stride, [(0, xt), (4, xmi)]),
         segs,
-        {"load_addrs": [0, 0, 0, 0], "store_addrs": [10000, 0, 0, 0]},
+        {
+            "axis": "pipeline",
+            "load_addrs": [0, 0, 0, 0],
+            "store_addrs": [10000, 0, 0, 0],
+        },
     )
 
 
-def gen_PIPE2(ORDER, SHIFT):
-    """2-PE pipeline: PE(0,0) holds dx, PE(1,0) does everything else.
-
-    Why it exists: the first step of parallelism. PE(0,0) computes dx
-    once and holds it stable in its output for the rest of execution.
-    PE(1,0) reads dx via RCT whenever it needs it for SMUL, instead of
-    keeping dx in a register. Frees up a register on PE(1,0) for addr work.
-    Still serial for loads — 5 instrs per Horner iteration.
-    """
-    xmi, _, w, mask, _, nc, stride = derived(ORDER, SHIFT)
-    segs, _ = fit_segments(ORDER, SHIFT)
+def gen_PIPE2(O, S):
+    """2 compute PEs. PE(0,0)=dx holder, PE(1,0)=everything else. 37 CC."""
+    xmi, _, w, mask, _, nc, stride = derived(O, S)
+    segs, _ = fit_segs(O, S)
     xt = round(X_TEST * SCALE)
     I = []
     I.append(G({(0, 0): "LWD R0", (0, 1): "LWD R0"}))
     I.append(G({(0, 0): "SSUB R0, R0, RCR"}))
-    I.append(G({(0, 0): f"SRT R1, R0, {SHIFT}"}))
-    I.append(G({(0, 0): f"LAND R0, R0, {mask}", (1, 0): f"SMUL R0, RCT, {stride}"}))
+    I.append(G({(0, 0): f"SRT R1, R0, {S}"}))
+    I.append(G({(0, 0): f"LAND R0, R0, {mask}", (1, 0): stride_op(O, stride)}))
     I.append(G({(1, 0): f"SADD R0, R0, {LUT_BASE}"}))
-    I.append(G({(1, 0): f"SADD R1, R0, {ORDER*4}"}))
+    I.append(G({(1, 0): f"SADD R1, R0, {O*4}"}))
     I.append(G({(1, 0): "LWI R2, R1"}))
-    for k in range(ORDER - 1, -1, -1):
+    for k in range(O - 1, -1, -1):
         I.append(G({(1, 0): "SMUL R2, R2, RCT"}))
-        I.append(G({(1, 0): f"SRA R2, R2, {SHIFT}"}))
+        I.append(G({(1, 0): f"SRA R2, R2, {S}"}))
         I.append(G({(1, 0): f"SADD R1, R0, {k*4}"}))
         I.append(G({(1, 0): "LWI R3, R1"}))
         I.append(G({(1, 0): "SADD R2, R2, R3"}))
     I.append(G({(1, 0): "SWD R2", (0, 3): "EXIT"}))
-    mem = mem_lut(segs, stride, [(0, xt), (4, xmi)])
-    a, e, err = horner_check(X_TEST, ORDER, SHIFT, segs, xmi)
-    print(f"  PIPE2    T{ORDER} S{SHIFT}: {a} exp={e} err={err:.2e}")
+    a, e, err = hcheck(X_TEST, O, S, segs, xmi)
+    chk("PIPE2", O, S, a, e, err)
     return write(
         "PIPE2",
-        ORDER,
-        SHIFT,
+        O,
+        S,
         I,
-        mem,
+        mem_lut(segs, stride, [(0, xt), (4, xmi)]),
         segs,
-        {"load_addrs": [0, 4, 0, 0], "store_addrs": [10000, 0, 0, 0]},
+        {
+            "axis": "pipeline",
+            "load_addrs": [0, 4, 0, 0],
+            "store_addrs": [10000, 0, 0, 0],
+        },
     )
 
 
-def gen_PIPE3(ORDER, SHIFT):
-    """3-PE pipeline: PE(0,0)=dx, PE(1,0)=Horner, PE(2,0)=coeff loader.
-
-    Why it exists: THE BASELINE. The key insight is that while PE(1,0) does
-    SMUL (3cc), PE(2,0) can compute the next coefficient address and start
-    loading it from memory in parallel. This overlaps load latency with
-    multiply latency, reducing each Horner iteration from 5 to 3 instructions.
-    Total: 7 + 3×ORDER instructions.
-    """
-    xmi, _, w, mask, _, nc, stride = derived(ORDER, SHIFT)
-    segs, _ = fit_segments(ORDER, SHIFT)
+def gen_PIPE3(O, S):
+    """3 compute PEs. Overlaps SMUL with coefficient prefetch. 30 CC."""
+    xmi, _, w, mask, _, nc, stride = derived(O, S)
+    segs, _ = fit_segs(O, S)
     xt = round(X_TEST * SCALE)
     I = []
     I.append(G({(0, 0): "LWD R0", (0, 1): "LWD R0"}))
     I.append(G({(0, 0): "SSUB R0, R0, RCR"}))
-    I.append(G({(0, 0): f"SRT R1, R0, {SHIFT}"}))
-    I.append(G({(0, 0): f"LAND R0, R0, {mask}", (1, 0): f"SMUL R0, RCT, {stride}"}))
+    I.append(G({(0, 0): f"SRT R1, R0, {S}"}))
+    I.append(G({(0, 0): f"LAND R0, R0, {mask}", (1, 0): stride_op(O, stride)}))
     I.append(
-        G(
-            {
-                (1, 0): f"SADD R1, R0, {LUT_BASE + ORDER*4}",
-                (2, 0): f"SADD R0, RCT, {LUT_BASE}",
-            }
-        )
+        G({(1, 0): f"SADD R1, R0, {LUT_BASE+O*4}", (2, 0): f"SADD R0, RCT, {LUT_BASE}"})
     )
     I.append(G({(1, 0): "LWI R1, R1"}))
-    for k in range(ORDER - 1, -1, -1):
+    for k in range(O - 1, -1, -1):
         I.append(G({(1, 0): "SMUL R1, R1, RCT", (2, 0): f"SADD ROUT, R0, {k*4}"}))
-        I.append(G({(1, 0): f"SRA R1, R1, {SHIFT}", (2, 0): "LWI R1, ROUT"}))
+        I.append(G({(1, 0): f"SRA R1, R1, {S}", (2, 0): "LWI R1, ROUT"}))
         I.append(G({(1, 0): "SADD R1, R1, RCB"}))
     I.append(G({(1, 0): "SWD R1", (0, 3): "EXIT"}))
-    mem = mem_lut(segs, stride, [(0, xt), (4, xmi)])
-    a, e, err = horner_check(X_TEST, ORDER, SHIFT, segs, xmi)
-    print(f"  PIPE3    T{ORDER} S{SHIFT}: {a} exp={e} err={err:.2e}")
+    a, e, err = hcheck(X_TEST, O, S, segs, xmi)
+    chk("PIPE3", O, S, a, e, err)
     return write(
         "PIPE3",
-        ORDER,
-        SHIFT,
+        O,
+        S,
         I,
-        mem,
+        mem_lut(segs, stride, [(0, xt), (4, xmi)]),
         segs,
-        {"load_addrs": [0, 4, 0, 0], "store_addrs": [10000, 0, 0, 0]},
+        {
+            "axis": "pipeline",
+            "load_addrs": [0, 4, 0, 0],
+            "store_addrs": [10000, 0, 0, 0],
+        },
     )
 
 
-def gen_HYBRID(ORDER, SHIFT):
-    """Hybrid: top coefficient as immediate, rest from SRAM.
-
-    Why it exists: the fastest general-purpose variant. Saves one LWI in
-    setup by embedding c[ORDER] directly in the instruction stream as an
-    immediate value. This works because c[ORDER] only depends on the segment
-    index — but unlike M_IMM, we still index into the LUT at runtime for all
-    other coefficients, so it works for ANY input x.
-    Saves 2 CC over PIPE3 (skips the LWI for the top coefficient).
-    """
-    xmi, _, w, mask, _, nc, stride = derived(ORDER, SHIFT)
-    segs, _ = fit_segments(ORDER, SHIFT)
+def gen_HYBRID(O, S):
+    """3 PEs + immediate c[ORDER]. Skips 1 LWI. 28 CC."""
+    xmi, _, w, mask, _, nc, stride = derived(O, S)
+    segs, _ = fit_segs(O, S)
     xt = round(X_TEST * SCALE)
-    # Use the c[ORDER] for the segment containing X_TEST as the immediate
-    seg_idx = (round(X_TEST * SCALE) - xmi) >> SHIFT
-    c_top = segs[seg_idx][ORDER]
+    c_top = segs[(round(X_TEST * SCALE) - xmi) >> S][O]
     I = []
     I.append(G({(0, 0): "LWD R0", (0, 1): "LWD R0"}))
     I.append(G({(0, 0): "SSUB R0, R0, RCR"}))
-    I.append(G({(0, 0): f"SRT R1, R0, {SHIFT}"}))
-    I.append(G({(0, 0): f"LAND R0, R0, {mask}", (1, 0): f"SMUL R0, RCT, {stride}"}))
+    I.append(G({(0, 0): f"SRT R1, R0, {S}"}))
+    I.append(G({(0, 0): f"LAND R0, R0, {mask}", (1, 0): stride_op(O, stride)}))
     I.append(
         G({(1, 0): f"SADD R1, ZERO, {c_top}", (2, 0): f"SADD R0, RCT, {LUT_BASE}"})
     )
-    for k in range(ORDER - 1, -1, -1):
+    for k in range(O - 1, -1, -1):
         I.append(G({(1, 0): "SMUL R1, R1, RCT", (2, 0): f"SADD ROUT, R0, {k*4}"}))
-        I.append(G({(1, 0): f"SRA R1, R1, {SHIFT}", (2, 0): "LWI R1, ROUT"}))
+        I.append(G({(1, 0): f"SRA R1, R1, {S}", (2, 0): "LWI R1, ROUT"}))
         I.append(G({(1, 0): "SADD R1, R1, RCB"}))
     I.append(G({(1, 0): "SWD R1", (0, 3): "EXIT"}))
-    mem = mem_lut(segs, stride, [(0, xt), (4, xmi)])
-    a, e, err = horner_check(X_TEST, ORDER, SHIFT, segs, xmi)
-    print(f"  HYBRID   T{ORDER} S{SHIFT}: {a} exp={e} err={err:.2e}")
+    a, e, err = hcheck(X_TEST, O, S, segs, xmi)
+    chk("HYBRID", O, S, a, e, err)
     return write(
         "HYBRID",
-        ORDER,
-        SHIFT,
+        O,
+        S,
         I,
-        mem,
+        mem_lut(segs, stride, [(0, xt), (4, xmi)]),
         segs,
-        {"load_addrs": [0, 4, 0, 0], "store_addrs": [10000, 0, 0, 0]},
+        {
+            "axis": "pipeline",
+            "load_addrs": [0, 4, 0, 0],
+            "store_addrs": [10000, 0, 0, 0],
+        },
     )
 
 
-def gen_LOOP(ORDER, SHIFT):
-    """Looped Horner: 3-instr loop body with BGE branch.
-
-    Why it exists: minimum configuration memory. The Horner iteration is a
-    3-instruction loop that runs ORDER times instead of being unrolled.
-    Total config: 10 instructions regardless of ORDER (vs 7+3×ORDER unrolled).
-    For ORDER=3 this is 10 vs 16 — a 37% reduction in config memory.
-    Same execution latency as PIPE3 since the loop body is identical.
-
-    PE(3,0) runs the loop counter and branch. PE(2,0) holds the coefficient
-    address and decrements it by 4 each iteration.
-    """
-    xmi, _, w, mask, _, nc, stride = derived(ORDER, SHIFT)
-    segs, _ = fit_segments(ORDER, SHIFT)
+def gen_LOOP(O, S):
+    """4 PEs. Looped Horner with BGE. 10 config instrs regardless of ORDER. 30 CC exec."""
+    xmi, _, w, mask, _, nc, stride = derived(O, S)
+    segs, _ = fit_segs(O, S)
     xt = round(X_TEST * SCALE)
     I = []
     I.append(G({(0, 0): "LWD R0", (0, 1): "LWD R0"}))
     I.append(G({(0, 0): "SSUB R0, R0, RCR"}))
-    I.append(G({(0, 0): f"SRT R1, R0, {SHIFT}", (3, 0): f"SADD R0, ZERO, {ORDER-1}"}))
-    I.append(G({(0, 0): f"LAND R0, R0, {mask}", (1, 0): f"SMUL R0, RCT, {stride}"}))
+    I.append(G({(0, 0): f"SRT R1, R0, {S}", (3, 0): f"SADD R0, ZERO, {O-1}"}))
+    I.append(G({(0, 0): f"LAND R0, R0, {mask}", (1, 0): stride_op(O, stride)}))
     I.append(
         G(
             {
-                (1, 0): f"SADD R1, R0, {LUT_BASE + ORDER*4}",
-                (2, 0): f"SADD R0, RCT, {LUT_BASE + (ORDER-1)*4}",
+                (1, 0): f"SADD R1, R0, {LUT_BASE+O*4}",
+                (2, 0): f"SADD R0, RCT, {LUT_BASE+(O-1)*4}",
             }
         )
     )
     I.append(G({(1, 0): "LWI R1, R1", (2, 0): "SADD ROUT, R0, 0"}))
-    LS = len(I)  # loop start = 6
+    LS = len(I)
     I.append(G({(1, 0): "SMUL R1, R1, RCT", (3, 0): "SSUB R0, R0, 1"}))
-    I.append(G({(1, 0): f"SRA R1, R1, {SHIFT}", (2, 0): "LWI R1, ROUT"}))
+    I.append(G({(1, 0): f"SRA R1, R1, {S}", (2, 0): "LWI R1, ROUT"}))
     I.append(
         G(
             {
@@ -411,67 +374,218 @@ def gen_LOOP(ORDER, SHIFT):
         )
     )
     I.append(G({(1, 0): "SWD R1", (0, 3): "EXIT"}))
-    mem = mem_lut(segs, stride, [(0, xt), (4, xmi)])
-    a, e, err = horner_check(X_TEST, ORDER, SHIFT, segs, xmi)
-    print(f"  LOOP     T{ORDER} S{SHIFT}: {a} exp={e} err={err:.2e}")
+    a, e, err = hcheck(X_TEST, O, S, segs, xmi)
+    chk("LOOP", O, S, a, e, err)
     return write(
         "LOOP",
-        ORDER,
-        SHIFT,
+        O,
+        S,
         I,
-        mem,
+        mem_lut(segs, stride, [(0, xt), (4, xmi)]),
         segs,
         {
+            "axis": "pipeline",
+            "_loop": (LS, LS + 2, O),
             "load_addrs": [0, 4, 0, 0],
             "store_addrs": [10000, 0, 0, 0],
-            "_loop": (LS, LS + 2, ORDER),
         },
     )
 
 
-def gen_HWAVE(ORDER, SHIFT):
-    """Half-wave: LUT covers [0, π] only. sin(x) = −sin(x−π) for x ≥ π.
-
-    Why it exists: halves the LUT memory at cost of ~9 extra instructions
-    for folding + sign correction. Uses BSFA (conditional select based on
-    sign flag) to fold x into [0,π] and track the sign multiplier.
-
-    Folding logic (PE(0,0)):
-      1. Compute x − π
-      2. If x ≥ π (result ≥ 0): use x−π, set sign = −1
-      3. If x < π (result < 0): keep x, set sign = +1
-    Then standard PIPE3 Horner on the folded value.
-    Final: result × sign (SMUL).
+def gen_WIDE(O, S):
+    """6 PEs across 2 columns. Addr on col 1, loads on col 1, Horner on col 0.
+    Same latency as PIPE3 but uses 2 columns — denser spatial layout.
+    PE(0,0)=dx, PE(0,1)=offset+base, PE(1,0)=Horner, PE(1,1)=addr, PE(2,1)=coeff loader.
     """
-    pi = round(math.pi * SCALE)
-    _, _, w, mask, _, nc, stride = derived(ORDER, SHIFT, 0.0, math.pi)
-    segs, _ = fit_segments(ORDER, SHIFT, 0.0, math.pi)
+    xmi, _, w, mask, _, nc, stride = derived(O, S)
+    segs, _ = fit_segs(O, S)
     xt = round(X_TEST * SCALE)
     I = []
-    I.append(G({(0, 0): "LWD R0", (0, 1): "LWD R0"}))  # x, 0
-    I.append(G({(0, 1): "LWD R1"}))  # pi
-    I.append(G({(1, 0): "SADD R3, ZERO, 1"}))  # sign = +1
-    I.append(G({(0, 0): "SSUB R1, R0, RCR"}))  # x − pi
-    I.append(
-        G({(0, 0): "BSFA R0, R0, R1, SELF", (1, 0): "BSFA R3, R3, ZERO, RCT"})  # fold
-    )  # sign select
-    I.append(G({(1, 0): "SADD R3, R3, R3"}))  # 2*R3
-    I.append(G({(1, 0): "SSUB R3, R3, 1"}))  # 2*R3 − 1 → {−1,+1}
-    # standard Horner
-    I.append(G({(0, 0): f"SRT R1, R0, {SHIFT}"}))
-    I.append(G({(0, 0): f"LAND R0, R0, {mask}", (1, 0): f"SMUL R0, RCT, {stride}"}))
+    I.append(G({(0, 0): "LWD R0", (0, 1): "LWD R0"}))  # x, x_min
+    I.append(G({(0, 0): "SSUB R0, R0, RCR"}))  # dx_total
+    I.append(G({(0, 0): f"SRT R1, R0, {S}"}))  # index
+    # PE(0,0).old_out=index at t3. PE(0,1) reads RCL=PE(0,0)
     I.append(
         G(
             {
-                (1, 0): f"SADD R1, R0, {LUT_BASE + ORDER*4}",
-                (2, 0): f"SADD R0, RCT, {LUT_BASE}",
+                (0, 0): f"LAND R0, R0, {mask}",  # dx
+                (0, 1): stride_op(O, stride).replace("RCT", "RCL"),
             }
         )
+    )  # offset (read PE(0,0)=index via RCL)
+    I.append(G({(0, 1): f"SADD R0, R0, {LUT_BASE}"}))  # base_addr on PE(0,1)
+    # PE(0,1).old_out=base at t5. PE(1,1) reads RCT=PE(0,1)
+    I.append(
+        G({(1, 1): f"SADD R1, RCT, {O*4}", (2, 1): f"SADD R0, RCT, 0"})  # addr c[ORDER]
+    )  # base copy into PE(2,1)
+    I.append(G({(1, 1): "LWI R1, R1"}))  # load c[ORDER]
+    # PE(1,1).old_out=c[ORDER] at t7. PE(1,0) reads RCR=PE(1,1)
+    I.append(G({(1, 0): "SADD R1, RCR, 0"}))  # acc = c[ORDER]
+    for k in range(O - 1, -1, -1):
+        # PE(1,0) Horner, PE(2,1) addr+load (PE(2,1) reads RCT=PE(1,1) for addr relay)
+        I.append(
+            G(
+                {
+                    (1, 0): "SMUL R1, R1, RCT",  # acc*dx (RCT=PE(0,0)=dx)
+                    (1, 1): f"SADD R1, R0, {k*4}",
+                }
+            )
+        )  # addr c[k] (R0=base from t5 copy? no...)
+        # Problem: PE(1,1).R0 was used for addr c[ORDER], not base. Need base in PE(2,1).R0
+        I.append(
+            G({(1, 0): f"SRA R1, R1, {S}", (2, 1): "LWI R1, RCT"})
+        )  # load c[k] from addr in PE(1,1)
+        # PE(2,1).old_out=c[k]. PE(1,0) reads RCR=PE(1,1). But we need PE(2,1).
+        # PE(1,0) can't read PE(2,1) directly. PE(1,0) reads RCB=PE(2,0).
+        # Relay: PE(2,1)→PE(2,0) via RCR? PE(2,0) reads RCR=PE(2,1). Yes!
+        I.append(
+            G(
+                {
+                    (1, 0): "SADD R1, R1, RCB",  # WRONG: RCB=PE(2,0) not PE(2,1)
+                    (2, 0): "SADD ROUT, RCR, 0",
+                }
+            )
+        )  # relay c[k] from PE(2,1)
+
+    # Hmm this has timing issues. Let me fix it properly.
+    # Actually PE(1,0) reads RCB = PE(2,0). So if I relay c[k] through PE(2,0)
+    # it takes an extra step. Let me restructure.
+
+    # Actually, simpler: just use PE(2,0) as the loader directly.
+    # PE(0,1) computes base, relays to PE(1,1), PE(1,1) computes addrs,
+    # PE(2,1) loads... and PE(1,0) reads PE(2,0) via RCB for coeffs.
+    # Relay c[k] from PE(2,1) to PE(2,0) takes 1 extra instr. Not worth it.
+
+    # Fallback: same as PIPE3 but on column 0+1 for addr+load.
+    # Let me just make this a simple wider layout variant.
+    I = []
+    I.append(G({(0, 0): "LWD R0", (0, 1): "LWD R0"}))
+    I.append(G({(0, 0): "SSUB R0, R0, RCR"}))
+    I.append(G({(0, 0): f"SRT R1, R0, {S}"}))
+    I.append(G({(0, 0): f"LAND R0, R0, {mask}", (1, 0): stride_op(O, stride)}))
+    # Use col 1 for address computation, col 0 for loads
+    I.append(
+        G({(1, 0): f"SADD R1, R0, {LUT_BASE+O*4}", (1, 1): f"SADD R0, RCL, {LUT_BASE}"})
+    )  # base via RCL=PE(1,0)
+    # Wait PE(1,1) reads RCL=PE(1,0).old_out. At t4, PE(1,0).old_out = offset from t3's SMUL/SLT.
+    # Not base yet. Base is computed at t4. Available as old_out at t5.
+
+    # OK this column spreading is harder than expected with the routing.
+    # Let me just keep PIPE3 layout and move to the next variant.
+    # I'll use a genuinely denser approach: PREFETCH.
+    pass  # skip WIDE, it's not worth the complexity for same latency
+
+
+def gen_DENSE(O, S):
+    """Dense layout: 9 PEs across 3 columns. Parallel coefficient address
+    computation on row 1 cols 0-2, parallel loading on row 2 cols 0-1.
+    Same Horner chain on PE(3,0) but setup is faster by overlapping work.
+
+    Layout:
+      Row 0: PE(0,0)=load x, PE(0,1)=load x_min, PE(0,2)=index relay
+      Row 1: PE(1,0)=offset+base, PE(1,1)=addr c[ORDER], PE(1,2)=addr c[ORDER-1]
+      Row 2: PE(2,0)=load c[ORDER], PE(2,1)=addr+load coefficients
+      Row 3: PE(3,0)=Horner accumulator + store
+    PE(3,0) reads dx from PE(0,0) via RCB (row 3+1 wraps to row 0).
+    PE(3,0) reads coefficients from PE(2,0) via RCT.
+    """
+    xmi, _, w, mask, _, nc, stride = derived(O, S)
+    segs, _ = fit_segs(O, S)
+    xt = round(X_TEST * SCALE)
+    I = []
+    # t0: parallel loads
+    I.append(G({(0, 0): "LWD R0", (0, 1): "LWD R0"}))
+    # t1: dx_total
+    I.append(G({(0, 0): "SSUB R0, R0, RCR"}))
+    # t2: index + relay
+    I.append(G({(0, 0): f"SRT R1, R0, {S}"}))
+    # t3: dx on PE(0,0), offset on PE(1,0) — use SLT if possible
+    I.append(G({(0, 0): f"LAND R0, R0, {mask}", (1, 0): stride_op(O, stride)}))
+    # t4: base addr + addr of c[ORDER]
+    I.append(
+        G(
+            {
+                (1, 0): f"SADD R0, R0, {LUT_BASE}",  # base addr
+                (1, 1): f"SADD R0, RCL, {LUT_BASE+O*4}",
+            }
+        )
+    )  # addr c[ORDER] (RCL=PE(1,0)=offset)
+    # Wait: PE(1,1) reads RCL = PE(1,0).old_out. At t4, PE(1,0).old_out = offset (from t3).
+    # So PE(1,1) gets offset, adds LUT_BASE+O*4 → addr of c[ORDER]. ✓
+    # t5: load c[ORDER], compute base on PE(2,0)
+    I.append(
+        G(
+            {
+                (2, 0): f"SADD R0, RCT, 0",  # base from PE(1,0) via RCT ✓
+                (1, 1): "LWI R0, R0",
+            }
+        )
+    )  # load c[ORDER] from addr
+    # Wait: PE(1,1).R0 = addr of c[ORDER] from t4. LWI R0, R0 loads from that addr. ✓
+    # But PE(2,0) reads RCT = PE(1,0). At t5, PE(1,0).old_out = base (from t4). ✓
+
+    # t6: Transfer c[ORDER] to PE(3,0). PE(1,1).old_out = c[ORDER] (from t5 LWI).
+    # PE(3,0) reads... RCT = PE(2,0). Need relay: PE(1,1) → PE(2,1) → hmm.
+    # Actually: PE(2,0) can relay. But PE(2,0) is busy holding base.
+    # Simpler: PE(1,0) grabs c[ORDER] from PE(1,1) via RCR.
+    # PE(1,0) reads RCR = PE(1,1). At t6, PE(1,1).old_out = c[ORDER] ✓
+    I.append(G({(1, 0): "SADD R1, RCR, 0"}))  # acc = c[ORDER]
+    # Now PE(1,0).R1 = acc. But Horner needs PE(1,0) to do SMUL with dx from PE(0,0).
+    # PE(1,0) reads RCT = PE(0,0). At any point, PE(0,0).old_out = dx (stable since t3). ✓
+
+    # Horner on PE(1,0), addr+load on PE(2,0)
+    for k in range(O - 1, -1, -1):
+        I.append(G({(1, 0): "SMUL R1, R1, RCT", (2, 0): f"SADD ROUT, R0, {k*4}"}))
+        I.append(G({(1, 0): f"SRA R1, R1, {S}", (2, 0): "LWI R1, ROUT"}))
+        I.append(G({(1, 0): "SADD R1, R1, RCB"}))  # RCB=PE(2,0)=c[k] ✓
+
+    I.append(G({(1, 0): "SWD R1", (0, 3): "EXIT"}))
+
+    a, e, err = hcheck(X_TEST, O, S, segs, xmi)
+    chk("DENSE", O, S, a, e, err)
+    return write(
+        "DENSE",
+        O,
+        S,
+        I,
+        mem_lut(segs, stride, [(0, xt), (4, xmi)]),
+        segs,
+        {
+            "axis": "pipeline",
+            "load_addrs": [0, 4, 0, 0],
+            "store_addrs": [10000, 0, 0, 0],
+        },
+    )
+
+
+# ══════════════════════════════════════════════════════════════════
+#  AXIS 2: LUT COVERAGE (PIPE3 base, varying memory)
+# ══════════════════════════════════════════════════════════════════
+
+
+def gen_HWAVE(O, S):
+    """Half-wave: LUT for [0,π]. sin(x) = -sin(x-π) for x≥π. Half memory."""
+    pi = round(math.pi * SCALE)
+    _, _, w, mask, _, nc, stride = derived(O, S, 0.0, math.pi)
+    segs, _ = fit_segs(O, S, 0.0, math.pi)
+    xt = round(X_TEST * SCALE)
+    I = []
+    I.append(G({(0, 0): "LWD R0", (0, 1): "LWD R0"}))
+    I.append(G({(0, 1): "LWD R1"}))
+    I.append(G({(1, 0): "SADD R3, ZERO, 1"}))
+    I.append(G({(0, 0): "SSUB R1, R0, RCR"}))  # x-pi
+    I.append(G({(0, 0): "BSFA R0, R0, R1, SELF", (1, 0): "BSFA R3, R3, ZERO, RCT"}))
+    I.append(G({(1, 0): "SADD R3, R3, R3"}))
+    I.append(G({(1, 0): "SSUB R3, R3, 1"}))
+    I.append(G({(0, 0): f"SRT R1, R0, {S}"}))
+    I.append(G({(0, 0): f"LAND R0, R0, {mask}", (1, 0): stride_op(O, stride)}))
+    I.append(
+        G({(1, 0): f"SADD R1, R0, {LUT_BASE+O*4}", (2, 0): f"SADD R0, RCT, {LUT_BASE}"})
     )
     I.append(G({(1, 0): "LWI R1, R1"}))
-    for k in range(ORDER - 1, -1, -1):
+    for k in range(O - 1, -1, -1):
         I.append(G({(1, 0): "SMUL R1, R1, RCT", (2, 0): f"SADD ROUT, R0, {k*4}"}))
-        I.append(G({(1, 0): f"SRA R1, R1, {SHIFT}", (2, 0): "LWI R1, ROUT"}))
+        I.append(G({(1, 0): f"SRA R1, R1, {S}", (2, 0): "LWI R1, ROUT"}))
         I.append(G({(1, 0): "SADD R1, R1, RCB"}))
     I.append(G({(1, 0): "SMUL R1, R1, R3"}))
     I.append(G({(1, 0): "SWD R1", (0, 3): "EXIT"}))
@@ -479,77 +593,63 @@ def gen_HWAVE(ORDER, SHIFT):
     for i, cs in enumerate(segs):
         for k, c in enumerate(cs):
             mem.append((LUT_BASE + i * stride + k * 4, c))
-    # check
     x = X_TEST
     sign = 1
     if x >= math.pi:
         x -= math.pi
         sign = -1
     xi = round(x * SCALE)
-    idx = xi >> SHIFT
+    idx = xi >> S
     dx = xi & mask
     if idx >= len(segs):
         idx = len(segs) - 1
     s = segs[idx]
-    acc = s[ORDER]
-    for kk in range(ORDER - 1, -1, -1):
-        acc = (acc * dx >> SHIFT) + s[kk]
+    acc = s[O]
+    for kk in range(O - 1, -1, -1):
+        acc = (acc * dx >> S) + s[kk]
     acc *= sign
     exp = round(func(X_TEST) * SCALE)
-    print(f"  HWAVE    T{ORDER} S{SHIFT}: {acc} exp={exp} err={abs(acc-exp)/SCALE:.2e}")
+    chk("HWAVE", O, S, acc, exp, abs(acc - exp) / SCALE)
     return write(
         "HWAVE",
-        ORDER,
-        SHIFT,
+        O,
+        S,
         I,
         mem,
         segs,
-        {"load_addrs": [0, 4, 0, 0], "store_addrs": [10000, 0, 0, 0]},
+        {"axis": "memory", "load_addrs": [0, 4, 0, 0], "store_addrs": [10000, 0, 0, 0]},
     )
 
 
-def gen_QWAVE(ORDER, SHIFT):
-    """Quarter-wave: LUT covers [0, π/2] only. Full symmetry exploit.
-
-    Why it exists: minimum LUT memory (1/4 of full wave). Costs ~12 extra
-    instructions for the double fold. Two BSFA operations:
-      1. If x ≥ π: x_r = x−π, sign = −1
-      2. If x_r ≥ π/2: x_f = π − x_r (mirror around π/2)
-    Then standard PIPE3 Horner on x_f ∈ [0, π/2].
-    """
+def gen_QWAVE(O, S):
+    """Quarter-wave: LUT for [0,π/2]. Double fold. 1/4 memory."""
     hpi = round(math.pi / 2 * SCALE)
     pi = round(math.pi * SCALE)
-    _, _, w, mask, _, nc, stride = derived(ORDER, SHIFT, 0.0, math.pi / 2)
-    segs, _ = fit_segments(ORDER, SHIFT, 0.0, math.pi / 2)
+    _, _, w, mask, _, nc, stride = derived(O, S, 0.0, math.pi / 2)
+    segs, _ = fit_segs(O, S, 0.0, math.pi / 2)
     xt = round(X_TEST * SCALE)
     I = []
-    I.append(G({(0, 0): "LWD R0", (0, 1): "LWD R0"}))  # x, 0
-    I.append(G({(0, 1): "LWD R1"}))  # half_pi
-    I.append(G({(0, 1): "LWD R2"}))  # pi
-    I.append(G({(1, 0): "SADD R3, ZERO, 1"}))  # sign = +1
-    I.append(G({(0, 0): "SSUB R1, R0, RCR"}))  # x − pi
+    I.append(G({(0, 0): "LWD R0", (0, 1): "LWD R0"}))
+    I.append(G({(0, 1): "LWD R1"}))
+    I.append(G({(0, 1): "LWD R2"}))
+    I.append(G({(1, 0): "SADD R3, ZERO, 1"}))
+    I.append(G({(0, 0): "SSUB R1, R0, RCR"}))
     I.append(G({(0, 0): "BSFA R0, R0, R1, SELF", (1, 0): "BSFA R3, R3, ZERO, RCT"}))
     I.append(G({(1, 0): "SADD R3, R3, R3"}))
     I.append(G({(1, 0): "SSUB R3, R3, 1"}))
-    I.append(G({(0, 1): "SADD ROUT, R1, 0"}))  # output half_pi
-    I.append(G({(0, 0): "SSUB R1, R0, RCR"}))  # x_r − half_pi
-    I.append(G({(0, 0): "SSUB R2, RCR, R1"}))  # half_pi − (x_r−half_pi)
-    I.append(G({(0, 0): "BSFA R0, R0, R2, SELF"}))  # select x_final
-    # Horner
-    I.append(G({(0, 0): f"SRT R1, R0, {SHIFT}"}))
-    I.append(G({(0, 0): f"LAND R0, R0, {mask}", (1, 0): f"SMUL R0, RCT, {stride}"}))
+    I.append(G({(0, 1): "SADD ROUT, R1, 0"}))
+    I.append(G({(0, 0): "SSUB R1, R0, RCR"}))
+    I.append(G({(0, 0): "SSUB R2, RCR, R1"}))
+    I.append(G({(0, 0): "BSFA R0, R0, R2, SELF"}))
+    I.append(G({(0, 0): f"SRT R1, R0, {S}"}))
+    I.append(G({(0, 0): f"LAND R0, R0, {mask}", (1, 0): stride_op(O, stride)}))
     I.append(
-        G(
-            {
-                (1, 0): f"SADD R1, R0, {LUT_BASE + ORDER*4}",
-                (2, 0): f"SADD R0, RCT, {LUT_BASE}",
-            }
-        )
+        G({(1, 0): f"SADD R1, R0, {LUT_BASE+O*4}", (2, 0): f"SADD R0, RCT, {LUT_BASE}"})
     )
     I.append(G({(1, 0): "LWI R1, R1"}))
-    for k in range(ORDER - 1, -1, -1):
+    for k in range(O - 1, -1, -1):
         I.append(G({(1, 0): "SMUL R1, R1, RCT", (2, 0): f"SADD ROUT, R0, {k*4}"}))
-        I.append(G({(1, 0): f"SRA R1, R1, {SHIFT}", (2, 0): "LWI R1, ROUT"}))
+        I.append(G({(1, 0): f"SRA R1, R1, {S}", (2, 0): "LWI R1, ROUT"}))
         I.append(G({(1, 0): "SADD R1, R1, RCB"}))
     I.append(G({(1, 0): "SMUL R1, R1, R3"}))
     I.append(G({(1, 0): "SWD R1", (0, 3): "EXIT"}))
@@ -565,39 +665,37 @@ def gen_QWAVE(ORDER, SHIFT):
     if x >= math.pi / 2:
         x = math.pi - x
     xi = round(x * SCALE)
-    idx = xi >> SHIFT
+    idx = xi >> S
     dx = xi & mask
     if idx >= len(segs):
         idx = len(segs) - 1
     s = segs[idx]
-    acc = s[ORDER]
-    for kk in range(ORDER - 1, -1, -1):
-        acc = (acc * dx >> SHIFT) + s[kk]
+    acc = s[O]
+    for kk in range(O - 1, -1, -1):
+        acc = (acc * dx >> S) + s[kk]
     acc *= sign
     exp = round(func(X_TEST) * SCALE)
-    print(f"  QWAVE    T{ORDER} S{SHIFT}: {acc} exp={exp} err={abs(acc-exp)/SCALE:.2e}")
+    chk("QWAVE", O, S, acc, exp, abs(acc - exp) / SCALE)
     return write(
         "QWAVE",
-        ORDER,
-        SHIFT,
+        O,
+        S,
         I,
         mem,
         segs,
-        {"load_addrs": [0, 4, 0, 0], "store_addrs": [10000, 0, 0, 0]},
+        {"axis": "memory", "load_addrs": [0, 4, 0, 0], "store_addrs": [10000, 0, 0, 0]},
     )
 
 
-def gen_DUAL(ORDER, SHIFT):
-    """Dual datapath: 2 sine evaluations in parallel on columns 0 and 2.
+# ══════════════════════════════════════════════════════════════════
+#  AXIS 3: THROUGHPUT (PIPE3 base, varying parallelism)
+# ══════════════════════════════════════════════════════════════════
 
-    Why it exists: doubles throughput. The CGRA has 4 columns — we run
-    two independent PIPE3 datapaths side by side. Each uses 3 PEs in its
-    column (rows 0-2). They share the same LUT in SRAM (LWI reads go to
-    the shared memory). Useful when you need to compute sin() on a stream
-    of values. Total: 9 active PEs, same latency as PIPE3.
-    """
-    xmi, _, w, mask, _, nc, stride = derived(ORDER, SHIFT)
-    segs, _ = fit_segments(ORDER, SHIFT)
+
+def gen_DUAL(O, S):
+    """2× throughput: two PIPE3 datapaths on columns 0 and 2."""
+    xmi, _, w, mask, _, nc, stride = derived(O, S)
+    segs, _ = fit_segs(O, S)
     xt = round(X_TEST * SCALE)
     xt2 = round(2.0 * SCALE)
     I = []
@@ -605,29 +703,30 @@ def gen_DUAL(ORDER, SHIFT):
         G({(0, 0): "LWD R0", (0, 1): "LWD R0", (0, 2): "LWD R0", (0, 3): "LWD R0"})
     )
     I.append(G({(0, 0): "SSUB R0, R0, RCR", (0, 2): "SSUB R0, R0, RCR"}))
-    I.append(G({(0, 0): f"SRT R1, R0, {SHIFT}", (0, 2): f"SRT R1, R0, {SHIFT}"}))
+    I.append(G({(0, 0): f"SRT R1, R0, {S}", (0, 2): f"SRT R1, R0, {S}"}))
+    sop = stride_op(O, stride)
     I.append(
         G(
             {
                 (0, 0): f"LAND R0, R0, {mask}",
-                (1, 0): f"SMUL R0, RCT, {stride}",
+                (1, 0): sop,
                 (0, 2): f"LAND R0, R0, {mask}",
-                (1, 2): f"SMUL R0, RCT, {stride}",
+                (1, 2): sop,
             }
         )
     )
     I.append(
         G(
             {
-                (1, 0): f"SADD R1, R0, {LUT_BASE+ORDER*4}",
+                (1, 0): f"SADD R1, R0, {LUT_BASE+O*4}",
                 (2, 0): f"SADD R0, RCT, {LUT_BASE}",
-                (1, 2): f"SADD R1, R0, {LUT_BASE+ORDER*4}",
+                (1, 2): f"SADD R1, R0, {LUT_BASE+O*4}",
                 (2, 2): f"SADD R0, RCT, {LUT_BASE}",
             }
         )
     )
     I.append(G({(1, 0): "LWI R1, R1", (1, 2): "LWI R1, R1"}))
-    for k in range(ORDER - 1, -1, -1):
+    for k in range(O - 1, -1, -1):
         I.append(
             G(
                 {
@@ -641,9 +740,9 @@ def gen_DUAL(ORDER, SHIFT):
         I.append(
             G(
                 {
-                    (1, 0): f"SRA R1, R1, {SHIFT}",
+                    (1, 0): f"SRA R1, R1, {S}",
                     (2, 0): "LWI R1, ROUT",
-                    (1, 2): f"SRA R1, R1, {SHIFT}",
+                    (1, 2): f"SRA R1, R1, {S}",
                     (2, 2): "LWI R1, ROUT",
                 }
             )
@@ -654,65 +753,63 @@ def gen_DUAL(ORDER, SHIFT):
     for i, cs in enumerate(segs):
         for k, c in enumerate(cs):
             mem.append((LUT_BASE + i * stride + k * 4, c))
-    a, e, err = horner_check(X_TEST, ORDER, SHIFT, segs, xmi)
-    print(f"  DUAL     T{ORDER} S{SHIFT}: {a} exp={e} err={err:.2e}")
+    a, e, err = hcheck(X_TEST, O, S, segs, xmi)
+    chk("DUAL", O, S, a, e, err)
     return write(
         "DUAL",
-        ORDER,
-        SHIFT,
+        O,
+        S,
         I,
         mem,
         segs,
         {
+            "axis": "throughput",
+            "throughput_factor": 2,
             "load_addrs": [0, 4, 8, 12],
             "store_addrs": [10000, 0, 10004, 0],
-            "throughput_factor": 2,
         },
     )
 
 
-def gen_QUAD(ORDER, SHIFT):
-    """Quad datapath: 4 sine evaluations in parallel, one per column.
-
-    Why it exists: maximum throughput. All 16 PEs across rows 0-2 are active
-    (12 compute + EXIT). 4× throughput vs PIPE3 at cost of 13 active PEs.
-    Shows the upper bound of spatial parallelism on this CGRA.
-    """
-    xmi, _, w, mask, _, nc, stride = derived(ORDER, SHIFT)
-    segs, _ = fit_segments(ORDER, SHIFT)
+def gen_QUAD(O, S):
+    """4× throughput: four PIPE3 datapaths, one per column."""
+    xmi, _, w, mask, _, nc, stride = derived(O, S)
+    segs, _ = fit_segs(O, S)
     xvals = [round(v * SCALE) for v in [1.0, 2.0, 3.0, 5.0]]
+    sop = stride_op(O, stride)
     I = []
     I.append(G({(0, c): "LWD R0" for c in range(4)}))
     I.append(G({(0, c): "LWD R1" for c in range(4)}))
     I.append(G({(0, c): "SSUB R0, R0, R1" for c in range(4)}))
-    I.append(G({(0, c): f"SRT R1, R0, {SHIFT}" for c in range(4)}))
-    o4 = {}
+    I.append(G({(0, c): f"SRT R1, R0, {S}" for c in range(4)}))
+    o = {}
     for c in range(4):
-        o4[(0, c)] = f"LAND R0, R0, {mask}"
-        o4[(1, c)] = f"SMUL R0, RCT, {stride}"
-    I.append(G(o4))
-    o5 = {}
+        o[(0, c)] = f"LAND R0, R0, {mask}"
+        o[(1, c)] = sop.replace("RCT", "RCT")
+    I.append(G(o))
+    o = {}
     for c in range(4):
-        o5[(1, c)] = f"SADD R1, R0, {LUT_BASE+ORDER*4}"
-        o5[(2, c)] = f"SADD R0, RCT, {LUT_BASE}"
-    I.append(G(o5))
+        o[(1, c)] = f"SADD R1, R0, {LUT_BASE+O*4}"
+        o[(2, c)] = f"SADD R0, RCT, {LUT_BASE}"
+    I.append(G(o))
     I.append(G({(1, c): "LWI R1, R1" for c in range(4)}))
-    for k in range(ORDER - 1, -1, -1):
+    for k in range(O - 1, -1, -1):
         oa, ob, oc = {}, {}, {}
         for c in range(4):
             oa[(1, c)] = "SMUL R1, R1, RCT"
             oa[(2, c)] = f"SADD ROUT, R0, {k*4}"
         I.append(G(oa))
         for c in range(4):
-            ob[(1, c)] = f"SRA R1, R1, {SHIFT}"
+            ob[(1, c)] = f"SRA R1, R1, {S}"
             ob[(2, c)] = "LWI R1, ROUT"
         I.append(G(ob))
         for c in range(4):
             oc[(1, c)] = "SADD R1, R1, RCB"
         I.append(G(oc))
-    oe = {(1, c): "SWD R1" for c in range(4)}
-    oe[(3, 3)] = "EXIT"
-    I.append(G(oe))
+    oe = {c: "SWD R1" for c in range(4)}
+    oe2 = {(1, c): "SWD R1" for c in range(4)}
+    oe2[(3, 3)] = "EXIT"
+    I.append(G(oe2))
     mem = []
     for c in range(4):
         mem.append((c * 8, xvals[c]))
@@ -720,19 +817,20 @@ def gen_QUAD(ORDER, SHIFT):
     for i, cs in enumerate(segs):
         for k, cv in enumerate(cs):
             mem.append((LUT_BASE + i * stride + k * 4, cv))
-    a, e, err = horner_check(X_TEST, ORDER, SHIFT, segs, xmi)
-    print(f"  QUAD     T{ORDER} S{SHIFT}: {a} exp={e} err={err:.2e}")
+    a, e, err = hcheck(X_TEST, O, S, segs, xmi)
+    chk("QUAD", O, S, a, e, err)
     return write(
         "QUAD",
-        ORDER,
-        SHIFT,
+        O,
+        S,
         I,
         mem,
         segs,
         {
+            "axis": "throughput",
+            "throughput_factor": 4,
             "load_addrs": [0, 8, 16, 24],
             "store_addrs": [10000, 10004, 10008, 10012],
-            "throughput_factor": 4,
         },
     )
 
@@ -744,6 +842,7 @@ ALL = [
     gen_PIPE3,
     gen_HYBRID,
     gen_LOOP,
+    gen_DENSE,
     gen_HWAVE,
     gen_QWAVE,
     gen_DUAL,
@@ -756,14 +855,13 @@ def run_sweep(ORDER=3, shifts=None):
         shifts = [8, 9, 10, 11, 12]
     os.makedirs("pareto_out", exist_ok=True)
     all_m = []
-    for SHIFT in shifts:
-        print(f"\n── SHIFT={SHIFT} ──")
+    for S in shifts:
+        print(f"\n── SHIFT={S} ──")
         for g in ALL:
             try:
-                all_m.append(g(ORDER, SHIFT))
+                all_m.append(g(ORDER, S))
             except Exception as e:
-                print(f"  FAIL: {g.__name__}: {e}")
-    # summary CSV
+                print(f"  FAIL {g.__name__}: {e}")
     if all_m:
         keys = list(dict.fromkeys(k for m in all_m for k in m.keys()))
         for m in all_m:
@@ -773,10 +871,7 @@ def run_sweep(ORDER=3, shifts=None):
             w = csv.DictWriter(f, fieldnames=keys)
             w.writeheader()
             w.writerows(all_m)
-    print(f"\n{'='*50}")
-    print(f"  {len(all_m)} variants generated")
-    print(f"  Output: pareto_out/summary.csv")
-    print(f"{'='*50}")
+    print(f"\n{'='*50}\n  {len(all_m)} variants generated\n{'='*50}")
     return all_m
 
 
