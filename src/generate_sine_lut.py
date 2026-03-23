@@ -39,7 +39,7 @@ X_MAX = 2 * math.pi
 SHIFT = 10  # segment width = 2^SHIFT scaled units (1024 here)
 ORDER = 1  # polynomial order: 1=linear, 2=quad, 3=cubic...
 X_TEST = 1.0  # test input baked into memory.csv
-KERNEL = "sine_approx"  # output folder (to match with ipynb)
+KERNEL = "../examples/sine_approx"  # output folder (to match with ipynb)
 # ===============================================================
 
 LUT_BASE = 100  # byte address where coefficient table starts
