@@ -141,6 +141,19 @@ Optional `pr` parameters include:
 
 Outputs written using the `SWD` or `SWI` operations are written into a `memory_out.csv` file, so the `memory.csv` file is untouched for future executions. The `memory_out.csv` file is overriden on every run.
 
+# Dataflow Generation Tool
+the dataflow_gen.py can parse any folder with an instructions.csv file and generate a clean dataflow graph.
+
+Important: the folder **must** contain an instructions.csv file, otherwise the script will fail. If no format is given a default .dot file is generated.
+
+Usage:
+
+    python dataflow_gen.py /folder_with_instructions.csv --format svg
+
+Example for the convolution kernel:
+
+![dataflow](images/dataflow.svg)
+
 
 # Additional notes
 
