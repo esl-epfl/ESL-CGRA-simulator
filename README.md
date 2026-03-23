@@ -152,7 +152,7 @@ Usage:
 
 Example for the convolution kernel:
 
-![dataflow](dataflow.svg)
+![dataflow](images/dataflow.svg)
 
 
 # Additional notes
