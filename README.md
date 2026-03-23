@@ -141,6 +141,11 @@ Optional `pr` parameters include:
 
 Outputs written using the `SWD` or `SWI` operations are written into a `memory_out.csv` file, so the `memory.csv` file is untouched for future executions. The `memory_out.csv` file is overriden on every run.
 
+# Dataflow generation tool
+The dataflow_gen.py can generate a clean dataflow graph of your instructions automatically.
+Usage:
+python dataflow_gen.py /folder_with_instructions.csv/ --format svg
+
 
 # Additional notes
 
