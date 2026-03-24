@@ -45,7 +45,7 @@ def write_runner_script(dst: Path, load_addrs, store_addrs, tag: str, limit: int
 from pathlib import Path
 
 THIS_DIR = Path(__file__).resolve().parent
-sys.path.append(str((THIS_DIR / "../../src").resolve()))
+sys.path.append(str((THIS_DIR / "../../../src").resolve()))
 from cgra import *
 
 KERNEL = "."
