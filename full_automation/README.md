@@ -1,6 +1,4 @@
-# CGRA Sine Approximation — Design Space and Mathematical Rationale
-
-This project studies how the **same numerical task** — evaluating `sin(x)` in fixed-point arithmetic — can be mapped onto a **4×4 ESL-CGRA** in very different ways.
+# Sine Approximation Explained
 
 The current generator explores **15 variants** across four axes: pipeline structure, memory reduction, throughput scaling, and sine-specific algorithms. The active variant list in `generate.py` is: `SEQ`, `PIPE2`, `PIPE3`, `HYBRID`, `LOOP`, `WIDE`, `DENSE`, `HWAVE`, `QWAVE`, `DUAL`, `QUAD`, `STAGGERED_QUAD`, `DERIV1`, `DERIV3`, and `DERIV3_QWAVE`. 
 
@@ -12,37 +10,37 @@ All baseline variants start from the same idea: approximate `sin(x)` by a **piec
 
 The input is represented in fixed-point:
 
-\[
+```math
 x_i = \operatorname{round}(x \cdot \text{SCALE}), \qquad \text{SCALE}=10000
-\]
+```
 
 The full-wave baseline uses the domain:
 
-\[
+```math
 [0, 2\pi]
-\]
+```
 
 and splits it into segments of width
 
-\[
+```math
 w = 2^S
-\]
+```
 
-where `S` is the `SHIFT` parameter. The helper `derived(O, S)` makes this explicit: it computes the segment width `w = 1 << S`, the mask `w - 1`, the number of segments, and the per-segment memory stride `(O+1) * 4`. fileciteturn17file9
+where `S` is the `SHIFT` parameter. The helper `derived(O, S)` makes this explicit: it computes the segment width `w = 1 << S`, the mask `w - 1`, the number of segments, and the per-segment memory stride `(O+1) * 4`. 
 
-For each segment, `fit_segs(O, S)` samples `sin(x)` at `O+1` points, fits a degree-`O` polynomial offline with `np.polyfit`, and stores the coefficients in fixed-point form. fileciteturn17file9
+For each segment, `fit_segs(O, S)` samples `sin(x)` at `O+1` points, fits a degree-`O` polynomial offline with `np.polyfit`, and stores the coefficients in fixed-point form.
 
 So for segment `i`, the hardware is not trying to compute the exact transcendental function directly. It is evaluating a local approximation
 
-\[
+```math
 p_i(t)=c_0+c_1 t+c_2 t^2+\dots+c_O t^O
-\]
+```
 
 with a normalized local variable
 
-\[
+```math
 t = \frac{dx}{2^S}.
-\]
+```
 
 ---
 
@@ -50,18 +48,18 @@ t = \frac{dx}{2^S}.
 
 Let
 
-\[
+```math
 d = x_i - x_{\min}.
-\]
+```
 
 The hardware splits this into two parts:
 
-\[
+```math
 \text{idx} = d \gg S
-\]
-\[
+```
+```math
 dx = d \;\&\; (2^S-1)
-\]
+```
 
 This is the key fixed-point trick.
 
@@ -70,9 +68,9 @@ This is the key fixed-point trick.
 
 and together they satisfy
 
-\[
+```math
 d = \text{idx} \cdot 2^S + dx.
-\]
+```
 
 So when you see `SRT R1, R0, S` and then `LAND R0, R0, mask`, the hardware is not doing two unrelated operations. It is splitting the input into:
 
@@ -81,11 +79,11 @@ So when you see `SRT R1, R0, S` and then `LAND R0, R0, mask`, the hardware is no
 
 This is why `S8` uses more memory than `S12`: smaller segment width means more segments across the same domain. Since the number of segments scales roughly like
 
-\[
+```math
 N_{\text{seg}} \approx \frac{x_{\max}-x_{\min}}{2^S},
-\]
+```
 
-smaller `S` means larger LUTs, and larger `S` means fewer segment records. fileciteturn17file9
+smaller `S` means larger LUTs, and larger `S` means fewer segment records. 
 
 ---
 
@@ -93,47 +91,47 @@ smaller `S` means larger LUTs, and larger `S` means fewer segment records. fi
 
 A direct polynomial implementation would require explicit powers of `t`:
 
-\[
+```math
 c_0 + c_1 t + c_2 t^2 + c_3 t^3.
-\]
+```
 
 That is mathematically fine, but hardware-unfriendly.
 
 Instead, all baseline polynomial variants use **Horner’s form**:
 
-\[
+```math
 p(t)=c_0+t(c_1+t(c_2+\dots+t c_O)).
-\]
+```
 
 This turns the whole evaluation into a short recurrence:
 
-\[
+```math
 \text{acc} \leftarrow c_O
-\]
-\[
+```
+```math
 \text{acc} \leftarrow (\text{acc} \cdot t) + c_k
 \qquad k=O-1,\dots,0.
-\]
+```
 
 But the hardware does not store `t`; it stores `dx`, and since
 
-\[
+```math
 t = \frac{dx}{2^S},
-\]
+```
 
 each multiply by `t` becomes
 
-\[
+```math
 (\text{acc} \cdot dx) \gg S.
-\]
+```
 
 That is why the Horner loop always has the same mathematical shape:
 
-\[
+```math
 \text{acc} \leftarrow ((\text{acc} \cdot dx) \gg S) + c_k.
-\]
+```
 
-This single recurrence explains the structure of `SEQ`, `PIPE2`, `PIPE3`, `HYBRID`, `LOOP`, `WIDE`, and `DENSE`. They differ mainly in **where the recurrence lives** and **how coefficient fetches are overlapped**, not in what they compute. fileciteturn17file0turn17file12turn17file11
+This single recurrence explains the structure of `SEQ`, `PIPE2`, `PIPE3`, `HYBRID`, `LOOP`, `WIDE`, and `DENSE`. They differ mainly in **where the recurrence lives** and **how coefficient fetches are overlapped**, not in what they compute.
 
 ---
 
@@ -143,15 +141,15 @@ This single recurrence explains the structure of `SEQ`, `PIPE2`, `PIPE3`, `HYBRI
 
 Take a cubic segment:
 
-\[
+```math
 p(t)=c_0 + c_1 t + c_2 t^2 + c_3 t^3
-\]
+```
 
 Rewrite it in Horner form:
 
-\[
+```math
 p(t)=c_0 + t(c_1 + t(c_2 + t c_3)).
-\]
+```
 
 Now follow the execution conceptually.
 
@@ -159,9 +157,9 @@ Now follow the execution conceptually.
 
 The PE loads `x` and `x_min`, then computes
 
-\[
+```math
 d = x - x_{\min}.
-\]
+```
 
 This moves the input into the approximation domain.
 
@@ -169,9 +167,9 @@ This moves the input into the approximation domain.
 
 The PE computes
 
-\[
+```math
 \text{idx} = d \gg S.
-\]
+```
 
 This is integer division by the segment width. It tells the hardware which coefficient block to fetch from SRAM.
 
@@ -179,9 +177,9 @@ This is integer division by the segment width. It tells the hardware which coeff
 
 The PE computes
 
-\[
+```math
 dx = d \;\&\; (2^S-1).
-\]
+```
 
 This keeps the low `S` bits, i.e. the local position inside the chosen segment.
 
@@ -189,17 +187,17 @@ This keeps the low `S` bits, i.e. the local position inside the chosen segment.
 
 If a segment stores `O+1` coefficients, and each coefficient is 4 bytes, then one segment occupies
 
-\[
+```math
 \text{stride} = (O+1) \cdot 4
-\]
+```
 
 bytes.
 
 So the base address of segment `idx` is
 
-\[
+```math
 \text{base} = \text{LUT\_BASE} + \text{idx}\cdot\text{stride}.
-\]
+```
 
 For `O=3`, one segment in memory looks like:
 
@@ -214,21 +212,21 @@ For `O=3`, one segment in memory looks like:
 
 The PE starts from the highest coefficient:
 
-\[
+```math
 \text{acc} = c_3.
-\]
+```
 
 Then it applies the Horner recurrence three times:
 
-\[
+```math
 \text{acc} = ((c_3 \cdot dx) \gg S) + c_2
-\]
-\[
+```
+```math
 \text{acc} = ((\text{acc} \cdot dx) \gg S) + c_1
-\]
-\[
+```
+```math
 \text{acc} = ((\text{acc} \cdot dx) \gg S) + c_0.
-\]
+```
 
 The final value is the sine approximation for that segment.
 
@@ -236,9 +234,9 @@ The final value is the sine approximation for that segment.
 
 Because the polynomial is written in terms of
 
-\[
+```math
 t = \frac{dx}{2^S},
-\]
+```
 
 every time the recurrence says “multiply by `t`”, the hardware can instead multiply by `dx` and divide by `2^S`. Since `2^S` is a power of two, division becomes a right shift.
 
@@ -254,7 +252,7 @@ every time the recurrence says “multiply by `t`”, the hardware can instead m
 - add
 - store
 
-So there is no overlap between computation and memory access. It is the best pen-and-paper reference because it is simple, but it is the worst latency baseline. fileciteturn17file0
+So there is no overlap between computation and memory access. It is the best pen-and-paper reference because it is simple, but it is the worst latency baseline.
 
 ---
 
@@ -268,7 +266,7 @@ The pipeline family all computes the same polynomial, but changes the **schedule
 - one PE computes and holds `dx`
 - one PE performs address generation and Horner evaluation
 
-This removes some register pressure from the accumulator PE, but coefficient fetches are still largely serialized. fileciteturn17file0
+This removes some register pressure from the accumulator PE, but coefficient fetches are still largely serialized. 
 
 ### `PIPE3`
 `PIPE3` is the reference architecture. It adds a third PE so that coefficient fetches overlap with Horner arithmetic:
@@ -277,19 +275,19 @@ This removes some register pressure from the accumulator PE, but coefficient fet
 - PE B holds the Horner accumulator
 - PE C computes the next coefficient address and loads it while PE B is still busy multiplying
 
-This is the key scheduling idea of the project: exploit the 3-cycle latency of `SMUL` by using that time to prefetch the next coefficient. fileciteturn17file0
+This is the key scheduling idea of the project: exploit the 3-cycle latency of `SMUL` by using that time to prefetch the next coefficient. 
 
 ### `HYBRID`
-`HYBRID` keeps the same core structure as `PIPE3`, but avoids the initial top-coefficient load by embedding the highest coefficient as an immediate. It shortens the setup phase while preserving the rest of the LUT-driven evaluation. fileciteturn17file0
+`HYBRID` keeps the same core structure as `PIPE3`, but avoids the initial top-coefficient load by embedding the highest coefficient as an immediate. It shortens the setup phase while preserving the rest of the LUT-driven evaluation.
 
 ### `LOOP`
-`LOOP` keeps the same Horner recurrence but expresses the iteration with a branch-controlled loop. So it trades off configuration size against explicit unrolling. Execution latency is similar to the unrolled versions, but the instruction footprint is more compact. fileciteturn17file12
+`LOOP` keeps the same Horner recurrence but expresses the iteration with a branch-controlled loop. So it trades off configuration size against explicit unrolling. Execution latency is similar to the unrolled versions, but the instruction footprint is more compact.
 
 ### `WIDE`
-`WIDE` keeps the same functional structure as `PIPE3`, but spreads the address and load logic across two columns. It is a spatial-layout variant rather than a new mathematical method. The important point is that the Horner recurrence still lives in one PE, while neighboring PEs provide `dx` and coefficients through routing. fileciteturn17file12
+`WIDE` keeps the same functional structure as `PIPE3`, but spreads the address and load logic across two columns. It is a spatial-layout variant rather than a new mathematical method. The important point is that the Horner recurrence still lives in one PE, while neighboring PEs provide `dx` and coefficients through routing.
 
 ### `DENSE`
-`DENSE` uses more PEs in the setup path so several address computations and relays happen in parallel before the accumulator starts. It does not change the polynomial engine; it reduces slack in the schedule. Its own docstring explicitly describes it as a denser layout with parallel address computation and parallel loading. fileciteturn17file3turn17file11
+`DENSE` uses more PEs in the setup path so several address computations and relays happen in parallel before the accumulator starts. It does not change the polynomial engine; it reduces slack in the schedule.
 
 ---
 
@@ -298,12 +296,12 @@ This is the key scheduling idea of the project: exploit the 3-cycle latency of `
 The memory axis variants are mathematically elegant because they reduce LUT storage without changing the local polynomial engine.
 
 ### `HWAVE`
-`HWAVE` stores coefficients only over `[0, \pi]` and uses the identity
+`HWAVE` stores coefficients only over `(0, π)` and uses the identity
 
-\[
+```math
 \sin(x) = -\sin(x-\pi)
 \qquad \text{for } x \ge \pi.
-\]
+```
 
 So if the input falls in the second half of the period:
 
@@ -311,29 +309,29 @@ So if the input falls in the second half of the period:
 2. evaluate the usual segment polynomial on the folded point
 3. negate the result
 
-The folding logic adds control overhead, but cuts the LUT roughly in half. The memory for this variant explicitly includes `π` as an extra input constant before the LUT. fileciteturn17file13turn17file18
+The folding logic adds control overhead, but cuts the LUT roughly in half. The memory for this variant explicitly includes `π` as an extra input constant before the LUT.
 
 ### `QWAVE`
-`QWAVE` goes further and stores coefficients only over `[0, \pi/2]`, using two identities:
+`QWAVE` goes further and stores coefficients only over `[0, π/2]`, using two identities:
 
-\[
+```math
 \sin(x) = -\sin(x-\pi)
 \qquad \text{for } x \ge \pi
-\]
+```
 
-and then, inside `[0,\pi]`,
+and then, inside `[0,π]`,
 
-\[
+```math
 \sin(x)=\sin(\pi-x)
 \qquad \text{for } x \in [\pi/2, \pi].
-\]
+```
 
 So the front-end folds the input twice:
 
 - first into the correct half-wave
 - then into the first quarter-wave
 
-Only then does the polynomial engine run. This makes `QWAVE` one of the strongest memory-saving designs in the baseline family. fileciteturn17file10turn17file17
+Only then does the polynomial engine run. This makes `QWAVE` one of the strongest memory-saving designs.
 
 ---
 
@@ -342,13 +340,13 @@ Only then does the polynomial engine run. This makes `QWAVE` one of the stronges
 A different way to improve performance is to stop shortening one datapath and instead run several in parallel.
 
 ### `DUAL`
-`DUAL` instantiates two independent PIPE3-like evaluators. It processes two inputs per invocation and doubles throughput, at the cost of more active PEs and more routing pressure. fileciteturn17file17
+`DUAL` instantiates two independent PIPE3-like evaluators. It processes two inputs per invocation and doubles throughput, at the cost of more active PEs and more routing pressure.
 
 ### `QUAD`
-`QUAD` replicates the same idea across all four columns. It is the maximum straightforward throughput scaling on the 4×4 grid: four independent evaluations share the same global LUT memory but maintain separate local datapaths. fileciteturn17file7
+`QUAD` replicates the same idea across all four columns. It is the maximum straightforward throughput scaling on the 4×4 grid: four independent evaluations share the same global LUT memory but maintain separate local datapaths.
 
 ### `STAGGERED_QUAD`
-`STAGGERED_QUAD` still uses four lanes, but starts them at staggered times. This does not fundamentally change the arithmetic; it changes the occupancy pattern so the dataflow looks denser and more continuously busy over time. fileciteturn17file8
+`STAGGERED_QUAD` still uses four lanes, but starts them at staggered times. This does not fundamentally change the arithmetic; it changes the occupancy pattern so the dataflow looks denser and more continuously busy over time. 
 
 ---
 
@@ -358,23 +356,23 @@ The most interesting variants are not schedule tweaks but **model changes**.
 
 Instead of storing generic polynomial coefficients per segment, the derivative-based variants exploit the structure of sine:
 
-\[
+```math
 \sin'(x)=\cos(x), \qquad \sin''(x)=-\sin(x), \qquad \sin'''(x)=-\cos(x).
-\]
+```
 
 This means that if you know `sin(x0)` and `cos(x0)` at the start of a segment, you already know enough to reconstruct a local Taylor-like model.
 
 ### `DERIV1`
 `DERIV1` stores only two words per segment: a value anchor and a slope anchor. Conceptually, it uses a first-order local model
 
-\[
+```math
 \sin(x_0 + \delta) \approx \sin(x_0) + \delta \cos(x_0).
-\]
+```
 
-This is much smaller than a generic polynomial LUT, but it is only linear, so accuracy is lower. fileciteturn17file0
+This is much smaller than a generic polynomial LUT, but it is only linear, so accuracy is lower.
 
 ### `DERIV3`
-`DERIV3` stores only `[sin(x0), cos(x0)]` per segment, then reconstructs a cubic local approximation using the known derivative pattern of sine. In other words, it spends more arithmetic to avoid storing explicit `c2` and `c3` tables. The implementation also overrides the reported LUT word count to `2 * number_of_segments`, confirming that this is a compressed-memory model. fileciteturn17file4
+`DERIV3` stores only `[sin(x0), cos(x0)]` per segment, then reconstructs a cubic local approximation using the known derivative pattern of sine. In other words, it spends more arithmetic to avoid storing explicit `c2` and `c3` tables. The implementation also overrides the reported LUT word count to `2 * number_of_segments`.
 
 ### `DERIV3_QWAVE`
 `DERIV3_QWAVE` combines both ideas:
@@ -382,7 +380,7 @@ This is much smaller than a generic polynomial LUT, but it is only linear, so ac
 - quarter-wave symmetry to reduce the domain
 - anchor-based cubic reconstruction to reduce per-segment storage
 
-It is one of the most memory-efficient designs in the project because it shrinks both the number of segments and the number of words per segment. The current implementation reports exactly that via `lut_words_override = len(segs) * 2`. fileciteturn17file4turn17file0
+It is one of the most memory-efficient designs in the project because it shrinks both the number of segments and the number of words per segment. The current implementation reports exactly that via `lut_words_override = len(segs) * 2`.
 
 ---
 
@@ -408,7 +406,7 @@ It is one of the most memory-efficient designs in the project because it shrinks
 
 ---
 
-## 10. SHIFT as the master memory/accuracy knob
+## 10. SHIFT memory/accuracy knob
 
 `SHIFT` is the global knob that sets the granularity of the approximation.
 
@@ -424,37 +422,34 @@ Larger `SHIFT` means each polynomial must approximate sine over a wider interval
 
 ---
 
-## 11. Why routing matters so much
+## 11. Tools
 
-The CGRA routing model is simple but decisive:
+There are three tools in the sine example.
 
-- `RCT` = top neighbor output
-- `RCB` = bottom neighbor output
-- `RCL` = left neighbor output
-- `RCR` = right neighbor output
+```
+python generate.py [--order 1 2 3] [--shifts 8 9 10 11 12] [x_test 4.0]
+```
+This tool is to generate the instructions.csv and memory.csv for the simulator. All parameters are optional here, defaults are 
+```
+x_test = 1.0, 
+order = [1,2,3,4,5] 
+shift = [8,9,10,11,12]
+```
+There is also:
+```
+python automate_rtl_sim.py --order 1 --shift 12 [--project-root .] [--generate generate .py] [--kernel sine_approx] [--rtl-dir rtl_simulation] [--x-tests 1.0] [--limit 500] [--keep-parto store_true]
+```
+This tool takes the things generated by generate.py and parses them into the format needed for the RTL simulator. It outputs the in and out memory csvs and the intructions. There is also a small readme and json with the extra data from the generate.py.
 
-Each PE sees the **previous cycle’s** output from its neighbors. That means the real design problem is not just “what arithmetic do I want?” but:
+--order and --shift are mandatory. You can only generate the rtl equivalents for one order and one shift value (but for all design variations). This is mostly to avoid confusion for the user. The defaults for each parameter are written above.
 
-- where do I keep `dx` so that the accumulator can reuse it every iteration?
-- where do I compute the next address so that the load returns in time?
-- where do I place the Horner accumulator so the recurrence is local and the next coefficient arrives exactly when needed?
+We also have:
+```
+python plot.py [--input pareto_out/summary.csv] [--out plots] [--architecture False] [--variant DUAL QUAD HYBRID PIPE3 DERIV1] [--order None]
+```
+All parameters are optional. To change the variant values in the generated plots you need to trigger also the architecture flag to true. --out represents the out directory.
 
-That is why `PIPE3` is such an important baseline. It is the first point where the arithmetic structure of Horner matches the communication structure of the array. fileciteturn17file0turn17file12
-
----
-
-## 12. What this project is really about
-
-This project is best understood as a **mapping study**.
-
-The transcendental function is only the vehicle. The real subject is how one kernel changes character when you optimize for different objectives:
-
-- **minimum PE count** → `SEQ`
-- **best scalar latency** → `PIPE3` / `HYBRID`
-- **small configuration** → `LOOP`
-- **small LUT memory** → `HWAVE`, `QWAVE`, `DERIV3_QWAVE`
-- **maximum throughput** → `QUAD`
-- **better occupancy / denser schedules** → `DENSE`, `STAGGERED_QUAD`
-- **different mathematics, not just different schedules** → `DERIV1`, `DERIV3`, `DERIV3_QWAVE`
-
-So the contribution of the project is not a single “best” sine engine. It is the design space itself: a set of implementations that expose the trade-offs between memory, arithmetic, routing, and spatial parallelism in a very concrete way.
+Example pareto graphs are:
+![overview](../images/architecture_overview.png)
+![pareto](../images/architecture_tradeoffs.png)
+![variant](../images/variant_QUAD.png)
