@@ -2,3 +2,6 @@
 __pycache__*
 vscode/
 pareto_out/
+plots/
+rtl_simulation/
+sine_approx/

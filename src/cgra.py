@@ -422,7 +422,7 @@ class PE:
     ops_jump    = { 'JUMP'      : '' }
     ops_exit    = { 'EXIT'      : '' }
 
-def run( kernel, version="", pr="ROUT", limit=100, load_addrs=None, store_addrs=None, memory_manager=MEMORY()):
+def run( kernel, version="", pr="ROUT", limit=100, load_addrs=None, store_addrs=None, memory_manager=MEMORY(), output_basename=None):
     ker = []
     mem = []
 
@@ -454,7 +454,11 @@ def run( kernel, version="", pr="ROUT", limit=100, load_addrs=None, store_addrs=
     
     # Store the output sorted
     sorted_mem = sorted(mem, key=lambda x: x[0])
-    with open( kernel + "/"+FILENAME_MEM_O+version+EXT, 'w+') as f:
-        for row in sorted_mem: csv.writer(f).writerow(row)
+
+    mem_out_name = (output_basename or FILENAME_MEM_O) + version + EXT
+    with open(kernel + "/" + mem_out_name, "w+") as f:
+        for row in sorted_mem:
+            csv.writer(f).writerow(row)
+
     display_characterization(cgra, pr)
     print("\n\nEND")
